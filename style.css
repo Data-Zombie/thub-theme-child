@@ -833,3 +833,26 @@ body.page-template-page-thub-canvas .thub-header-center{
   object-fit:cover;
   display:block;
 }
+
+/* [THUB_TOGGLE] Interruttori ON/OFF */
+.thub-toggle{
+  display:flex; align-items:center; gap:.5rem; cursor:pointer;
+}
+.thub-toggle input{ display:none; } /* nasconde la checkbox nativa */
+.thub-toggle-slider{
+  position:relative; width:42px; height:24px;
+  background:#ccc; border-radius:9999px;
+  transition:background .25s;
+}
+.thub-toggle-slider::before{
+  content:""; position:absolute; top:2px; left:2px;
+  width:20px; height:20px; border-radius:50%;
+  background:#fff; transition: transform .25s;
+}
+.thub-toggle input:checked + .thub-toggle-slider{
+  background:var(--violet); /* usa colore brand */
+}
+.thub-toggle input:checked + .thub-toggle-slider::before{
+  transform:translateX(18px);
+}
+.thub-toggle-label{ font-size:.95rem; }

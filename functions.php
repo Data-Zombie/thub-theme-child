@@ -1578,20 +1578,16 @@ function thub_require_auth_and_check_nonce($nonce_field, $action) {
 add_action('admin_post_thub_update_name', function(){
   thub_require_auth_and_check_nonce('thub_nonce_name','thub_update_name');
 
-  $uid = get_current_user_id();
-  $first = isset($_POST['first_name']) ? sanitize_text_field($_POST['first_name']) : '';
-  $last  = isset($_POST['last_name'])  ? sanitize_text_field($_POST['last_name'])  : '';
-  $nick  = isset($_POST['nickname'])   ? sanitize_user($_POST['nickname'], true)   : '';
+  $uid   = get_current_user_id();
+  $first = isset($_POST['first_name'])   ? sanitize_text_field($_POST['first_name'])   : '';
+  $last  = isset($_POST['last_name'])    ? sanitize_text_field($_POST['last_name'])    : '';
+  $pub   = isset($_POST['display_name']) ? sanitize_text_field($_POST['display_name']) : '';
 
   update_user_meta($uid, 'first_name', $first);
   update_user_meta($uid, 'last_name',  $last);
 
-  if ($nick) {
-    // Nickname “pubblico”: aggiorno nicename se possibile
-    $user = get_userdata($uid);
-    $args = ['ID'=>$uid, 'display_name'=>$nick];
-    // Evita nicename invalido/duplicato: lasciamo wordpress gestire il fallback
-    wp_update_user($args);
+  if ($pub) {
+    wp_update_user(['ID'=>$uid, 'display_name'=>$pub]);
   }
 
   thub_redirect_back_updated();
@@ -1626,8 +1622,12 @@ add_action('admin_post_thub_update_emails', function(){
   $rec = isset($_POST['thub_email_recovery']) ? sanitize_email($_POST['thub_email_recovery']) : '';
   $con = isset($_POST['thub_email_contact'])  ? sanitize_email($_POST['thub_email_contact'])  : '';
 
-  if ($rec && is_email($rec)) update_user_meta($uid,'thub_email_recovery',$rec); else delete_user_meta($uid,'thub_email_recovery');
-  if ($con && is_email($con)) update_user_meta($uid,'thub_email_contact', $con); else delete_user_meta($uid,'thub_email_contact');
+  /* [THUB_FIX_EMAILS] Ripristino chiave recovery corretta */
+  if ($rec && is_email($rec)) update_user_meta($uid, 'thub_email_recovery', $rec);
+  else delete_user_meta($uid, 'thub_email_recovery');
+
+  if ($con && is_email($con)) update_user_meta($uid, 'thub_email_contact', $con);
+  else delete_user_meta($uid, 'thub_email_contact');
 
   thub_redirect_back_updated();
 });
@@ -1756,4 +1756,388 @@ add_action('admin_post_thub_update_socials', function(){
 
   update_user_meta($uid,'thub_socials', $clean);
   thub_redirect_back_updated();
+});
+
+/* ============================================================
+ * [THUB_PRIVACY_SAVE_HANDLER] Salvataggio “Dati e privacy” (scoped)
+ * - Endpoint: admin-post.php?action=thub_save_privacy
+ * - Aggiorna solo le chiavi presenti in POST (thub_keys[])
+ * ============================================================ */
+add_action('admin_post_thub_save_privacy', function(){
+  if ( ! is_user_logged_in() ){
+    wp_safe_redirect( wp_get_referer() ?: home_url('/') );
+    exit;
+  }
+
+  // Nonce: accettiamo i nonce dei singoli box (box1/box2/box3/box4)
+  $nonce_ok =
+    ( isset($_POST['_thub_privacy_nonce']) && (
+        wp_verify_nonce($_POST['_thub_privacy_nonce'], 'thub_privacy_box1') ||
+        wp_verify_nonce($_POST['_thub_privacy_nonce'], 'thub_privacy_box2') ||
+        wp_verify_nonce($_POST['_thub_privacy_nonce'], 'thub_privacy_box3') ||
+        wp_verify_nonce($_POST['_thub_privacy_nonce'], 'thub_privacy_box4')
+      )
+    );
+
+  if ( ! $nonce_ok ){
+    wp_safe_redirect( add_query_arg('thub_privacy_saved', '0', wp_get_referer() ?: home_url('/') ) );
+    exit;
+  }
+
+  $uid = get_current_user_id();
+
+  // Solo le chiavi dichiarate in questo form
+  $allowed = array_map('sanitize_key', (array)($_POST['thub_keys'] ?? []));
+
+  // Whitelist globale (sicurezza)
+  $whitelist = [
+    'thub_priv_web_activity',
+    'thub_priv_history',
+    'thub_ads_personalized',
+    'thub_ads_partners',
+    'thub_search_personalized',
+    'thub_share_birthdate',
+    'thub_share_gender',
+    'thub_share_email',
+    'thub_share_phone',
+    'thub_share_social',
+    'thub_share_geoloc',
+  ];
+
+  // Intersezione: chiavi valide e dichiarate dal form
+  $keys_to_touch = array_values(array_intersect($allowed, $whitelist));
+
+  foreach( $keys_to_touch as $meta_key ){
+    // Se la checkbox è presente → '1', altrimenti '0'
+    $val = (isset($_POST[$meta_key]) && $_POST[$meta_key] === '1') ? '1' : '0';
+    update_user_meta( $uid, $meta_key, $val );
+  }
+
+  wp_safe_redirect( add_query_arg('thub_privacy_saved', '1', wp_get_referer() ?: home_url('/') ) );
+  exit;
+});
+
+/* ============================================================
+ * [THUB_PRIVACY_EXPORT_HANDLER] Download dati utente (JSON)
+ * - Endpoint: admin-post.php?action=thub_download_data
+ * - Esegue il download immediato di un JSON con i principali meta
+ *   gestiti in questa sezione (non sostituisce l’export GDPR completo).
+ * ============================================================ */
+add_action('admin_post_thub_download_data', function(){
+  if ( ! is_user_logged_in() ){
+    wp_safe_redirect( wp_get_referer() ?: home_url('/') );
+    exit;
+  }
+  if ( ! isset($_POST['_thub_privacy_export_nonce']) || ! wp_verify_nonce($_POST['_thub_privacy_export_nonce'], 'thub_privacy_export_nonce') ){
+    wp_safe_redirect( add_query_arg('thub_privacy_export', 'err', wp_get_referer() ?: home_url('/') ) );
+    exit;
+  }
+
+  $uid   = get_current_user_id();
+  $user  = get_userdata($uid);
+  $email = $user ? $user->user_email : '';
+
+  // Whitelist meta pertinenti (puoi estendere in futuro)
+  $keys = [
+    'thub_priv_web_activity',
+    'thub_priv_history',
+    'thub_ads_personalized',
+    'thub_ads_partners',
+    'thub_search_personalized',
+    'thub_share_birthdate',
+    'thub_share_gender',
+    'thub_share_email',
+    'thub_share_phone',
+    'thub_share_social',
+    'thub_share_geoloc',
+  ];
+
+  $data = [
+    'generated_at' => current_time('mysql'),
+    'site'         => home_url('/'),
+    'user' => [
+      'id'    => $uid,
+      'email' => $email,
+      'login' => $user ? $user->user_login : '',
+      'name'  => $user ? trim($user->first_name.' '.$user->last_name) : '',
+    ],
+    'privacy_meta' => [],
+  ];
+  foreach($keys as $k){
+    $data['privacy_meta'][$k] = get_user_meta($uid, $k, true);
+  }
+
+  // Output JSON scaricabile
+  $filename = 'thub-privacy-data-user-'.$uid.'-'.date('Ymd-His').'.json';
+  nocache_headers();
+  header('Content-Type: application/json; charset=utf-8');
+  header('Content-Disposition: attachment; filename="'.$filename.'"');
+  echo wp_json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+  exit;
+});
+
+/* ============================================================
+ * [THUB_PRIVACY_ERASE_HANDLER] Richiesta eliminazione dati (GDPR)
+ * - Endpoint: admin-post.php?action=thub_erase_data
+ * - Crea una richiesta "remove_personal_data" e invia email conferma.
+ * ============================================================ */
+add_action('admin_post_thub_erase_data', function(){
+  if ( ! is_user_logged_in() ){
+    wp_safe_redirect( wp_get_referer() ?: home_url('/') );
+    exit;
+  }
+  if ( ! isset($_POST['_thub_privacy_erase_nonce']) || ! wp_verify_nonce($_POST['_thub_privacy_erase_nonce'], 'thub_privacy_erase_nonce') ){
+    wp_safe_redirect( add_query_arg('thub_privacy_export', 'err', wp_get_referer() ?: home_url('/') ) );
+    exit;
+  }
+
+  $uid   = get_current_user_id();
+  $user  = get_userdata($uid);
+  if( ! $user ){
+    wp_safe_redirect( add_query_arg('thub_privacy_export', 'err', wp_get_referer() ?: home_url('/') ) );
+    exit;
+  }
+
+  // Crea richiesta ufficiale di rimozione dati e invia email
+  $request_id = wp_create_user_request( $user->user_email, 'remove_personal_data', [ 'user_id' => $uid ] );
+  if ( is_wp_error($request_id) || ! $request_id ){
+    wp_safe_redirect( add_query_arg('thub_privacy_export', 'err', wp_get_referer() ?: home_url('/') ) );
+    exit;
+  }
+
+  wp_send_user_request( $request_id ); // invia email con link di conferma
+
+  // Torna alla pagina con messaggio informativo
+  wp_safe_redirect( add_query_arg('thub_privacy_export', 'mail', wp_get_referer() ?: home_url('/') ) );
+  exit;
+});
+
+/* ============================================================
+ * [THUB_PRIVACY_AJAX_SAVE] Salvataggio ON/OFF via AJAX
+ * Endpoint: admin-ajax.php?action=thub_toggle_privacy_save
+ * Body atteso: meta_key, value ('1'|'0'), _ajax_nonce
+ * ============================================================ */
+add_action('wp_ajax_thub_toggle_privacy_save', function(){
+  if( ! is_user_logged_in() ){
+    wp_send_json_error(['message'=>'Non autenticato'], 401);
+  }
+
+  // Verifica nonce
+  $nonce = isset($_POST['_ajax_nonce']) ? sanitize_text_field($_POST['_ajax_nonce']) : '';
+  if( ! wp_verify_nonce($nonce, 'thub_privacy_ajax') ){
+    wp_send_json_error(['message'=>'Nonce non valido'], 403);
+  }
+
+  // Whitelist chiavi consentite
+  $whitelist = [
+    'thub_priv_web_activity',
+    'thub_priv_history',
+    'thub_ads_personalized',
+    'thub_ads_partners',
+    'thub_search_personalized',
+    'thub_share_birthdate',
+    'thub_share_gender',
+    'thub_share_email',
+    'thub_share_phone',
+    'thub_share_social',
+    'thub_share_geoloc',
+  ];
+
+  $meta_key = isset($_POST['meta_key']) ? sanitize_key($_POST['meta_key']) : '';
+  $value    = isset($_POST['value'])    ? ($_POST['value'] === '1' ? '1':'0') : '0';
+
+  if( ! in_array($meta_key, $whitelist, true) ){
+    wp_send_json_error(['message'=>'Chiave non consentita'], 400);
+  }
+
+  $uid = get_current_user_id();
+  update_user_meta($uid, $meta_key, $value);
+
+  wp_send_json_success([
+    'message'  => 'Salvato',
+    'meta_key' => $meta_key,
+    'value'    => $value,
+  ]);
+});
+
+// [THUB_ENQUEUE_ACCOUNT_JS] Enqueue + AJAX url
+add_action('wp_enqueue_scripts', function(){
+  // registra o enqueue il tuo JS (aggiorna handle/percorso se diverso)
+  wp_enqueue_script(
+    'thub-account',
+    get_stylesheet_directory_uri() . '/assets/js/thub-account.js',
+    [], // dipendenze se servono
+    null,
+    true
+  );
+  // passa ajaxurl al JS
+  wp_localize_script('thub-account', 'thubAccount', [
+    'ajaxurl' => admin_url('admin-ajax.php'),
+  ]);
+});
+
+/* ===========================================
+ * [THUB_SEC_CHANGE_PWD_AJAX] Cambio password via AJAX
+ * - Verifica nonce
+ * - Forza utente loggato
+ * - Valida lunghezza min. 8
+ * - Aggiorna password e meta 'thub_last_password_change'
+ * =========================================== */
+add_action('wp_ajax_thub_change_password', 'thub_ajax_change_password');
+function thub_ajax_change_password(){
+  if ( ! is_user_logged_in() ){
+    wp_send_json( ['success'=>false, 'message'=>'Non sei autenticato.'], 403 );
+  }
+
+  $user_id = get_current_user_id();
+
+  // Nonce
+  $nonce = isset($_POST['nonce']) ? sanitize_text_field( wp_unslash($_POST['nonce']) ) : '';
+  if ( ! wp_verify_nonce( $nonce, 'thub_change_password' ) ){
+    wp_send_json( ['success'=>false, 'message'=>'Token di sicurezza non valido.'], 400 );
+  }
+
+  // Nuova password
+  $newpwd = isset($_POST['newpwd']) ? (string) $_POST['newpwd'] : '';
+  $newpwd = trim( wp_unslash( $newpwd ) );
+
+  if ( strlen( $newpwd ) < 8 ){
+    wp_send_json( ['success'=>false, 'message'=>'La password deve avere almeno 8 caratteri.'], 400 );
+  }
+
+  // Aggiorna password
+  wp_set_password( $newpwd, $user_id );
+
+  // Memorizza data ultima modifica password
+  update_user_meta( $user_id, 'thub_last_password_change', time() );
+
+  // Ri‑autentica l’utente su questa sessione (utile perché wp_set_password può invalidarla)
+  wp_clear_auth_cookie();
+  wp_set_current_user( $user_id );
+  wp_set_auth_cookie( $user_id, true ); // true = remember me
+
+  wp_send_json( ['success'=>true, 'message'=>'Password aggiornata con successo.'] );
+}
+
+/* ===========================
+   [THUB_PASS_LAST_CHANGED_HOOKS]
+   - Inizializza alla registrazione (ulteriore safety net)
+   - Aggiorna dopo reset password (flusso "password dimenticata")
+   =========================== */
+
+// Alla registrazione (se non già settato)
+add_action('user_register', function($user_id){
+  if ( ! get_user_meta($user_id, 'thub_last_password_change', true) ) {
+    update_user_meta($user_id, 'thub_last_password_change', time());
+  }
+}, 10);
+
+// Dopo reset password
+add_action('after_password_reset', function($user, $new_pass){
+  update_user_meta($user->ID, 'thub_last_password_change', time());
+}, 10, 2);
+
+/* ===========================================================
+ * [THUB_LOGIN_DEVICES] Tracciamento dispositivi
+ * - A: registra/aggiorna il device al login (wp_login)
+ * - B: aggiorna last_seen del device corrente ad ogni richiesta (init)
+ * - Retention: 60 giorni / max 20 device
+ * =========================================================== */
+
+if ( ! defined('DAY_IN_SECONDS') ) define('DAY_IN_SECONDS', 86400);
+
+function thub_get_client_ip(){
+  // Semplice, senza X-Forwarded-For (SiteGround può ripulire a monte)
+  return isset($_SERVER['REMOTE_ADDR']) ? sanitize_text_field($_SERVER['REMOTE_ADDR']) : '';
+}
+function thub_get_client_ua(){
+  return isset($_SERVER['HTTP_USER_AGENT']) ? substr(sanitize_text_field($_SERVER['HTTP_USER_AGENT']), 0, 512) : '';
+}
+function thub_fingerprint($ip, $ua){
+  return md5($ip . '|' . $ua);
+}
+function thub_parse_ua_basic($ua){
+  // Parser "povero ma robusto" (evita dipendenze esterne)
+  $browser = 'Sconosciuto';
+  $os      = 'Sconosciuto';
+
+  if (stripos($ua,'Firefox') !== false)         $browser = 'Firefox';
+  elseif (stripos($ua,'Chrome') !== false && stripos($ua,'Chromium') === false && stripos($ua,'Edg') === false) $browser = 'Chrome';
+  elseif (stripos($ua,'Edg') !== false)         $browser = 'Edge';
+  elseif (stripos($ua,'Safari') !== false && stripos($ua,'Chrome') === false) $browser = 'Safari';
+
+  if (stripos($ua,'Windows') !== false)         $os = 'Windows';
+  elseif (stripos($ua,'Mac OS X') !== false || stripos($ua,'Macintosh') !== false) $os = 'macOS';
+  elseif (stripos($ua,'Android') !== false)     $os = 'Android';
+  elseif (stripos($ua,'iPhone') !== false || stripos($ua,'iPad') !== false) $os = 'iOS';
+  elseif (stripos($ua,'Linux') !== false)       $os = 'Linux';
+
+  return ['browser'=>$browser, 'os'=>$os];
+}
+
+/* --- A) Registra/aggiorna device al login --- */
+add_action('wp_login', function($user_login, $user){
+  $user_id = is_object($user) ? (int)$user->ID : 0;
+  if(!$user_id) return;
+
+  $ip  = thub_get_client_ip();
+  $ua  = thub_get_client_ua();
+  $fp  = thub_fingerprint($ip, $ua);
+  $now = time();
+
+  $list = get_user_meta($user_id, 'thub_login_devices', true);
+  if(!is_array($list)) $list = [];
+
+  $parsed = thub_parse_ua_basic($ua);
+
+  if(!isset($list[$fp])){
+    $list[$fp] = [
+      'ip'         => $ip,
+      'ua'         => $ua,
+      'browser'    => $parsed['browser'],
+      'os'         => $parsed['os'],
+      'first_seen' => $now,
+      'last_seen'  => $now,
+      'count'      => 1,
+      // 'country'  => '', 'city' => ''  // opzionale (GeoIP in futuro)
+    ];
+  }else{
+    $list[$fp]['last_seen'] = $now;
+    $list[$fp]['count']     = (int)$list[$fp]['count'] + 1;
+  }
+
+  // Retention: 60 giorni / massimo 20 record
+  $cut = $now - 60*DAY_IN_SECONDS;
+  foreach($list as $k => $row){
+    if( !is_array($row) || (isset($row['last_seen']) && (int)$row['last_seen'] < $cut) ){
+      unset($list[$k]);
+    }
+  }
+  if (count($list) > 20){
+    // ordina per last_seen desc e taglia
+    uasort($list, fn($a,$b)=> ($b['last_seen']??0) <=> ($a['last_seen']??0) );
+    $list = array_slice($list, 0, 20, true);
+  }
+
+  update_user_meta($user_id, 'thub_login_devices', $list);
+}, 10, 2);
+
+/* --- B) Aggiorna last_seen ad ogni richiesta autenticata (leggerissimo) --- */
+add_action('init', function(){
+  if(!is_user_logged_in()) return;
+  $user_id = get_current_user_id();
+  if(!$user_id) return;
+
+  $ip  = thub_get_client_ip();
+  $ua  = thub_get_client_ua();
+  if(!$ua) return;
+
+  $fp  = thub_fingerprint($ip, $ua);
+  $now = time();
+
+  $list = get_user_meta($user_id, 'thub_login_devices', true);
+  if(!is_array($list) || !isset($list[$fp])) return; // aggiorniamo solo se già esiste
+  $list[$fp]['last_seen'] = $now;
+
+  update_user_meta($user_id, 'thub_login_devices', $list);
 });

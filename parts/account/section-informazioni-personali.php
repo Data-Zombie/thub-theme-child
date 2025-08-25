@@ -261,10 +261,10 @@ $user_lang = get_user_meta($user_id,'thub_lang',true);
               </div>
 
               <label style="display:block;max-width:420px;">
-                <span class="screen-reader-text">Nickname</span>
-                <input type="text" name="nickname" placeholder="Nickname"
-                       value="<?php echo esc_attr($nickname); ?>"
-                       style="width:100%;padding:.5rem .6rem;border:1px solid #ddd;border-radius:.6rem;">
+                <span class="screen-reader-text">Nome pubblico</span>
+                <input type="text" name="display_name" placeholder="Nome pubblico"
+                      value="<?php echo esc_attr($display_name); ?>"
+                      style="width:100%;padding:.5rem .6rem;border:1px solid #ddd;border-radius:.6rem;">
               </label>
 
               <p style="margin:.6rem 0 0;">
@@ -356,7 +356,7 @@ $user_lang = get_user_meta($user_id,'thub_lang',true);
             </p>
             <p style="margin:0 0 .6rem;"><strong><?php echo esc_html($account_email); ?></strong></p>
 
-            <h4 style="margin:.6rem 0 .25rem; font-size:1rem;">Email di recupero</h4>
+            <h4 style="margin:1rem 0 .25rem; font-size:1rem;">Email di recupero</h4>
             <p style="color:#555; margin:0 0 .35rem;">
               L'indirizzo al quale T‑Hub può contattarti se rileva attività insolite nel tuo account o se non riesci più ad accedere.
             </p>
@@ -371,7 +371,7 @@ $user_lang = get_user_meta($user_id,'thub_lang',true);
                        style="width:100%;padding:.5rem .6rem;border:1px solid #ddd;border-radius:.6rem;">
               </label>
 
-              <h4 style="margin:.8rem 0 .25rem; font-size:1rem;">Email di contatto</h4>
+              <h4 style="margin:1rem 0 .25rem; font-size:1rem;">Email di contatto</h4>
               <p style="color:#555; margin:0 0 .35rem;">
                 L'indirizzo a cui ti vengono inviate le informazioni sulla maggior parte dei prodotti T‑Hub che utilizzi con questo account.
               </p>
@@ -413,9 +413,75 @@ $user_lang = get_user_meta($user_id,'thub_lang',true);
               <div style="display:grid; grid-template-columns: 140px 1fr; gap:.6rem; max-width:560px;">
                 <label style="display:block;">
                   <span class="screen-reader-text">Prefisso</span>
-                  <input type="text" name="thub_phone_cc" placeholder="Prefisso (es. +39)"
-                         value="<?php echo esc_attr($phone_cc); ?>"
-                         style="width:100%;padding:.5rem .6rem;border:1px solid #ddd;border-radius:.6rem;">
+                  <select name="thub_phone_cc"
+                          style="width:100%;padding:.5rem .6rem;border:1px solid #ddd;border-radius:.6rem;">
+                    <?php
+                      // Lista EU essenziale (puoi estenderla come in page-registrati.php)
+                      $EU_CC = [
+                        '+39'   => 'Italia',
+                        '+44'   => 'Regno Unito',
+                        '+33'   => 'Francia',
+                        '+49'   => 'Germania',
+                        '+34'   => 'Spagna',
+                        '+43'   => 'Austria',
+                        '+32'   => 'Belgio',
+                        '+31'   => 'Paesi Bassi',
+                        '+351'  => 'Portogallo',
+                        '+41'   => 'Svizzera',
+                        '+46'   => 'Svezia',
+                        '+45'   => 'Danimarca',
+                        '+47'   => 'Norvegia',
+                        '+358'  => 'Finlandia',
+                        '+30'   => 'Grecia',
+                        '+353'  => 'Irlanda',
+                        '+48'   => 'Polonia',
+                        '+420'  => 'Cechia',
+                        '+421'  => 'Slovacchia',
+                        '+36'   => 'Ungheria',
+                        '+386'  => 'Slovenia',
+                        '+385'  => 'Croazia',
+                        '+387'  => 'Bosnia ed Erzegovina',
+                        '+381'  => 'Serbia',
+                        '+382'  => 'Montenegro',
+                        '+355'  => 'Albania',
+                        '+389'  => 'Macedonia del Nord',
+                        '+40'   => 'Romania',
+                        '+359'  => 'Bulgaria',
+                        '+380'  => 'Ucraina',
+                        '+375'  => 'Bielorussia',
+                        '+7'    => 'Russia',
+                        '+90'   => 'Turchia',
+                        '+357'  => 'Cipro',
+                        '+356'  => 'Malta',
+                        '+354'  => 'Islanda',
+                        '+372'  => 'Estonia',
+                        '+371'  => 'Lettonia',
+                        '+370'  => 'Lituania',
+                        '+352'  => 'Lussemburgo',
+                        '+377'  => 'Monaco',
+                        '+376'  => 'Andorra',
+                        '+423'  => 'Liechtenstein',
+                        '+383'  => 'Kosovo',
+                        '+373'  => 'Moldavia',
+                        '+378'  => 'San Marino',
+                      ];
+                      // Opzione corrente in testa se non in lista
+                      if ($phone_cc && !isset($EU_CC[$phone_cc])) {
+                        echo '<option value="'.esc_attr($phone_cc).'" selected>'.esc_html($phone_cc).' (corrente)</option>';
+                        echo '<option disabled>──────────</option>';
+                      } else {
+                        echo '<option value="" '.selected($phone_cc=='',true,false).'>Seleziona prefisso</option>';
+                      }
+                      foreach($EU_CC as $cc=>$lbl){
+                        printf(
+                          '<option value="%1$s" %2$s>%3$s (%1$s)</option>',
+                          esc_attr($cc),
+                          selected($phone_cc,$cc,false),
+                          esc_html($lbl)
+                        );
+                      }
+                    ?>
+                  </select>
                 </label>
                 <label style="display:block;">
                   <span class="screen-reader-text">Numero di telefono</span>
@@ -831,12 +897,16 @@ $user_lang = get_user_meta($user_id,'thub_lang',true);
   document.addEventListener('click', function(e){
     const btn = e.target.closest('.thub-profile-avatar-trigger');
     if(!btn) return;
-
-    // Canale ufficiale: evento custom (richiede la patch Step 1)
-    window.dispatchEvent(new CustomEvent('thub:openAccountDropdown'));
-
-    // Fallback estremo: se il dropdown non esiste, apri profilo WP
-    if (!document.getElementById('thub-dropdown-account')){
+    const dropdown = document.getElementById('thub-dropdown-account');
+    if (dropdown){
+      // Apri dropdown account e subito clicca l'avatar per avviare l'upload
+      window.dispatchEvent(new CustomEvent('thub:openAccountDropdown'));
+      setTimeout(function(){
+        const wrap = document.getElementById('thub-acc-avatar-wrap');
+        if(wrap) wrap.click();
+      }, 100);
+    } else {
+      // Fallback estremo: se il dropdown non esiste, apri profilo WP
       window.location.href = "<?php echo esc_url( admin_url('profile.php') ); ?>";
     }
   }, true);
@@ -871,8 +941,12 @@ $user_lang = get_user_meta($user_id,'thub_lang',true);
   if(phpDay) d.value   = String(phpDay); if(phpMonth) m.value = String(phpMonth); if(phpYear) y.value = String(phpYear);
 
   const order = (country==='US') ? ['M','D','Y'] : (country==='JP' ? ['Y','M','D'] : ['D','M','Y']);
-  const labelled = (lab, node) => el('label',{style:'display:flex;align-items:center;gap:.35rem;'},[el('span',{style:'min-width:2.2rem;color:#666;'},[lab]), node]);
-  order.forEach(k=>{ if(k==='D') wraps.appendChild(labelled('GG',d)); if(k==='M') wraps.appendChild(labelled('MM',m)); if(k==='Y') wraps.appendChild(labelled('AAAA',y)); });
+  // Append puro senza etichette esterne (niente “GG/MM/AAAA”)
+  order.forEach(k=>{
+    if(k==='D') wraps.appendChild(d);
+    if(k==='M') wraps.appendChild(m);
+    if(k==='Y') wraps.appendChild(y);
+  });
 })();
 </script>
 

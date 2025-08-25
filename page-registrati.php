@@ -158,19 +158,68 @@ if ( $_SERVER['REQUEST_METHOD'] === 'POST' && isset( $_POST['thub_reg_action'] )
         if ( is_wp_error( $user_id ) ) {
           $err = 'Errore durante la creazione dell’account: ' . $user_id->get_error_message();
         } else {
-          // Metadati profilo
+          // Metadati profilo (legacy base, come nel tuo file)
           update_user_meta( $user_id, 'phone_number',       $phone_norm );
           update_user_meta( $user_id, 'phone_country_code', $phone_cc ); // opzionale, utile per analisi
           $birthdate = sprintf( '%04d-%02d-%02d', $birth_year, $birth_month, $birth_day );
           update_user_meta( $user_id, 'birthdate', $birthdate );
           if ( $gender ) update_user_meta( $user_id, 'gender', $gender );
 
-          // Login + redirect
-          thub_reg_login_user( $user_id );
+          /* ===========================
+             [THUB_REG_MIRROR] Mirror meta per compatibilità Canvas
+             - Telefoni → thub_phone_cc / thub_phone_number
+             - Nascita  → thub_dob_day|month|year
+             - Ultima modifica password → inizializzata all’atto della registrazione
+             - (OPZ. C): NON copiare più email di contatto da user_email
+             =========================== */
+          if ( ! empty($phone_cc) )   update_user_meta( $user_id, 'thub_phone_cc', $phone_cc );         // CC
+          if ( ! empty($phone_norm) ) update_user_meta( $user_id, 'thub_phone_number', $phone_norm );   // NUM
+          if ( $birth_year )  update_user_meta( $user_id, 'thub_dob_year',  (int)$birth_year );
+          if ( $birth_month ) update_user_meta( $user_id, 'thub_dob_month', (int)$birth_month );
+          if ( $birth_day )   update_user_meta( $user_id, 'thub_dob_day',   (int)$birth_day );
+          if ( ! get_user_meta( $user_id, 'thub_last_password_change', true ) ) {
+            update_user_meta( $user_id, 'thub_last_password_change', time() );
+          }
+
+          /* ===========================
+             [THUB_REG_LOGIN] Login immediato
+             =========================== */
+          if ( function_exists('thub_reg_login_user') ) {
+            thub_reg_login_user( $user_id ); // helper del tema, se presente
+          } else {
+            // Fallback: wp_signon
+            wp_logout(); // sicurezza
+            $creds = [
+              'user_login'    => $email,
+              'user_password' => $password,
+              'remember'      => true,
+            ];
+            $signed = wp_signon( $creds, is_ssl() );
+            if ( is_wp_error($signed) ) {
+              error_log('[THUB_REG] Login immediato fallito: '.$signed->get_error_message());
+            }
+          }
+
+          /* [THUB_FORCE_WP_LOGIN_ON_REGISTER] forza wp_login se non è già scattato
+             - Garantisce il popolamento del box "Dispositivi" anche se l'auto-login non ha chiamato wp_login */
+          if ( did_action('wp_login') === 0 ) {
+            $uobj = get_userdata( $user_id );
+            if ( $uobj && $uobj->user_login ) {
+              do_action( 'wp_login', $uobj->user_login, $uobj );
+            }
+          }
+
+          // (Opzionale) Se usi un "touch" custom per dispositivi, puoi aggiungerlo qui:
+          // if ( function_exists('thub_login_devices_touch') ) thub_login_devices_touch( $user_id );
+
+          // Redirect finale
           wp_safe_redirect( $REDIRECT_OK );
           exit;
         }
       }
+
+      // ⛔️ NOTA: nel file originale c'era una duplicazione dei "Metadati profilo" + [THUB_REG_MIRROR] DOPO il redirect.
+      // Va rimossa: dopo il redirect non verrebbe mai eseguita e può usare $user_id non definito.
     } // nonce OK
   }   // honeypot ok
 }     // submit
