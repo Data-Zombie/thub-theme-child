@@ -2141,3 +2141,126 @@ add_action('init', function(){
 
   update_user_meta($user_id, 'thub_login_devices', $list);
 });
+
+/* ==========================================================================================
+   [THUB_SUPPORT_HANDLER] — Ricezione form centro assistenza (section-informazioni.php)
+   - Verifica honeypot + nonce
+   - Validazione: subject 10..100, message non vuoto
+   - Invio wp_mail a info@t-hub.it con Reply-To utente loggato (se disponibile)
+   - Redirect con query var ?thub_support=ok|invalid|spam|err
+   ========================================================================================== */
+add_action('init', function(){
+
+  if ( 'POST' !== $_SERVER['REQUEST_METHOD'] ) return;
+  if ( empty($_POST['thub_support_action']) || $_POST['thub_support_action'] !== 'create' ) return;
+
+  // 0) Honeypot (bot)
+  if ( ! empty($_POST['thub_hp'] ?? '') ) {
+    $back = wp_get_referer() ?: home_url('/');
+    wp_safe_redirect( add_query_arg('thub_support','spam', $back) );
+    exit;
+  }
+
+  // 1) Nonce
+  if ( ! isset($_POST['_thub_support_nonce']) || ! wp_verify_nonce($_POST['_thub_support_nonce'], 'thub_support') ) {
+    $back = wp_get_referer() ?: home_url('/');
+    wp_safe_redirect( add_query_arg('thub_support','spam', $back) );
+    exit;
+  }
+
+  // 2) Input sanitizzati
+  $subject_raw = isset($_POST['thub_support_subject']) ? wp_unslash($_POST['thub_support_subject']) : '';
+  $message_raw = isset($_POST['thub_support_message']) ? wp_unslash($_POST['thub_support_message']) : '';
+
+  $subject = sanitize_text_field( $subject_raw );
+  // Sanitizzazione "sicura" con wp_kses() (niente HTML, manteniamo solo testo)
+  $message = wp_kses( $message_raw, array() );
+
+  // 3) Validazioni
+  if ( mb_strlen($subject) < 10 || mb_strlen($subject) > 100 || trim($message) === '' ) {
+    $back = wp_get_referer() ?: home_url('/');
+    wp_safe_redirect( add_query_arg('thub_support','invalid', $back) );
+    exit;
+  }
+
+  // 4) Costruzione email
+  $to       = 'info@t-hub.it';
+  $site     = wp_specialchars_decode( get_bloginfo('name'), ENT_QUOTES );
+  $mail_sub = sprintf('[Supporto %s] %s', $site, $subject);
+
+  // Corpo email (testo semplice)
+  $user     = wp_get_current_user();
+  $userMail = ( $user && $user->exists() ) ? $user->user_email : '';
+  $userID   = ( $user && $user->exists() ) ? $user->ID : 0;
+
+  $body  = "Richiesta di assistenza dal sito: $site\n\n";
+  $body .= "Utente: " . ( $userID ? "ID #$userID, {$user->display_name}, {$userMail}" : "ospite (non loggato)" ) . "\n";
+  $body .= "Data: " . wp_date('Y-m-d H:i:s') . "\n\n";
+  $body .= "Sintesi:\n$subject\n\n";
+  $body .= "Messaggio:\n$message\n";
+
+  // Headers
+  $headers = array('Content-Type: text/plain; charset=UTF-8');
+  if ( is_email($userMail) && ! empty($_POST['thub_support_reply_ok']) ) {
+    $headers[] = 'Reply-To: '.$userMail;
+  }
+
+  // 5) Invio
+  $ok = wp_mail( $to, $mail_sub, $body, $headers );
+
+  // 6) Redirect con esito
+  $back = wp_get_referer() ?: home_url('/assistenza/');
+  wp_safe_redirect( add_query_arg('thub_support', $ok ? 'ok' : 'err', $back) );
+  exit;
+});
+
+/* ============================================================
+   [THUB_SECURITY_CONTROLLER] — Sorgente unica per stato sicurezza
+   Usata da: section-sicurezza.php (dettaglio) e section-home.php (box)
+   Ritorna:
+     - status:       'ok' | 'attention'
+     - title:        string (H3)
+     - text:         string (testo coerente con lo status)
+     - text_ok:      string (per chi vuole scegliere a runtime)
+     - text_att:     string (per chi vuole scegliere a runtime)
+   ============================================================ */
+function thub_get_security_summary($user_id){
+  $user_id = (int) $user_id;
+
+  // Leggo i metadati che già usi in section-sicurezza.php
+  $last_pwd_change = (int) get_user_meta( $user_id, 'thub_last_password_change', true );
+  $rec_email       = trim( (string) get_user_meta( $user_id, 'thub_email_recovery', true ) );
+  $rec_phone_cc    = trim( (string) get_user_meta( $user_id, 'thub_phone_cc', true ) );
+  $rec_phone_num   = trim( (string) get_user_meta( $user_id, 'thub_phone_number', true ) );
+
+  $has_pwd_date    = ! empty( $last_pwd_change );
+  $has_phone       = ( $rec_phone_cc !== '' && $rec_phone_num !== '' );
+  $has_email       = ( $rec_email !== '' );
+
+  $needs_attention = ( ! $has_pwd_date || ! $has_phone || ! $has_email );
+
+  // Testi (identici a quelli già presenti in section-sicurezza.php)
+  $msg_ok  = __('Lo strumento di controllo della sicurezza ha esaminato il tuo account e non ha trovato azioni da consigliare', 'thub');
+  $msg_att = __('Lo strumento di controllo della sicurezza ha identificato alcune azioni per rendere più sicuro il tuo account', 'thub');
+
+  $status  = $needs_attention ? 'attention' : 'ok';
+  $title   = $needs_attention
+             ? __('Il tuo account richiede attenzione', 'thub')
+             : __('Il tuo account è protetto', 'thub');
+  $text    = $needs_attention ? $msg_att : $msg_ok;
+
+  // Se vuoi, qui puoi applicare filtri per personalizzare da plugin/child
+  $summary = [
+    'status'   => $status,
+    'title'    => $title,
+    'text'     => $text,
+    'text_ok'  => $msg_ok,
+    'text_att' => $msg_att,
+  ];
+
+  return apply_filters('thub_security_summary', $summary, $user_id, [
+    'has_pwd_date' => $has_pwd_date,
+    'has_phone'    => $has_phone,
+    'has_email'    => $has_email,
+  ]);
+}

@@ -46,6 +46,24 @@ $msg_ok  = 'Lo strumento di controllo della sicurezza ha esaminato il tuo accoun
 $msg_att = 'Lo strumento di controllo della sicurezza ha identificato alcune azioni per rendere più sicuro il tuo account';
 
 /* ---------------------------
+   [THUB_SEC_BIND_CONTROLLER] Override da controller centralizzato
+   - Se esiste thub_get_security_summary(), rimpiazziamo i testi
+     e lo stato con quelli del controller (coerenti ovunque).
+----------------------------*/
+if ( function_exists('thub_get_security_summary') ) {
+  $sec = thub_get_security_summary($user_id);
+  if ( is_array($sec) ) {
+    // Status → true/false per compatibilità con il resto del template
+    $needs_attention = ( isset($sec['status']) && $sec['status'] === 'attention' );
+    $status_label    = $needs_attention ? 'richiede attenzione' : 'è protetto';
+
+    // Testi identici a quelli usati altrove
+    $msg_ok  = isset($sec['text_ok'])  ? $sec['text_ok']  : 'Lo strumento di controllo della sicurezza ha esaminato il tuo account e non ha trovato azioni da consigliare';
+    $msg_att = isset($sec['text_att']) ? $sec['text_att'] : 'Lo strumento di controllo della sicurezza ha identificato alcune azioni per rendere più sicuro il tuo account';
+  }
+}
+
+/* ---------------------------
    [THUB_SEC_FMT] Data IT
 ----------------------------*/
 function thub_fmt_date_it( $ts ){
