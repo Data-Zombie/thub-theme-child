@@ -808,9 +808,28 @@ body.page-template-page-thub-canvas .thub-header-center{
   min-height: 40vh;
   padding: 10px 30px 30px 10px;
 }
+
 #thub-canvas .thub-account__title{
-  margin: .2rem 0 .8rem; 
+  margin: .2rem 0 .8rem;
   font-size: 1.25rem;
+  line-height: 1.3;
+  font-weight: 700;
+}
+
+#thub-canvas .thub-account__title--center{ text-align: center; }
+
+#thub-canvas .thub-box__title{
+  margin: .2rem 0 .35rem;
+  font-size: 1.05rem;
+  line-height: 1.35;
+  font-weight: 600;
+}
+
+#thub-canvas .thub-box__subtitle{
+  margin: .1rem 0 .25rem;
+  font-size: 1rem;
+  line-height: 1.4;
+  font-weight: 600;
 }
 
 /* Box neutro per i partial (stub) */

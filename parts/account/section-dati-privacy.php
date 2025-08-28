@@ -56,7 +56,6 @@ $thub_privacy_ajax_nonce = wp_create_nonce('thub_privacy_ajax');
      ========================= -->
 <style>
   /* Titolo + intro centrati */
-  #thub-canvas .thub-account__title,
   #thub-canvas .thub-account__intro{ text-align:center; }
 
   /* Griglia a 2 colonne per i box */
@@ -74,7 +73,6 @@ $thub_privacy_ajax_nonce = wp_create_nonce('thub_privacy_ajax');
     gap:.75rem; padding:.45rem .6rem;
     border:1px solid var(--border, #e6e6ea); border-radius:.6rem; background:#fff;
   }
-  .thub-box__title{ margin:.2rem 0 .35rem; }
   .thub-box__desc{ margin:0 0 .6rem; color:#555; }
 
   /* Riga inline testo + pulsante icona (Box 5) */
@@ -106,7 +104,7 @@ $thub_privacy_ajax_nonce = wp_create_nonce('thub_privacy_ajax');
 
 <section id="thub-privacy" class="thub-account__section" data-nonce="<?php echo esc_attr($thub_privacy_ajax_nonce); ?>"><!-- [THUB_PRIVACY_ROOT] -->
   <header class="thub-account__header" style="max-width:760px;margin:0 auto 1.25rem;">
-    <h2 class="thub-account__title">Dati e privacy</h2>
+    <h2 class="thub-account__title thub-account__title--center">Dati e privacy</h2>
     <p class="thub-account__intro">
       Opzioni principali relative alla privacy che ti aiutano a scegliere i dati da salvare nel tuo account,
       gli annunci che ti vengono mostrati, le informazioni da condividere con altre persone e altro ancora.
@@ -238,7 +236,7 @@ $thub_privacy_ajax_nonce = wp_create_nonce('thub_privacy_ajax');
           Queste informazioni sono private, ma puoi renderle visibili ad altre persone.
         </p>
 
-        <h4 style="margin:.6rem 0 .4rem;">Informazioni personali</h4>
+        <h4 class="thub-box__subtitle">Informazioni personali</h4>
 
         <div class="thub-toggle__row">
           <span class="thub-toggle-label">Data di nascita</span>
@@ -266,7 +264,7 @@ $thub_privacy_ajax_nonce = wp_create_nonce('thub_privacy_ajax');
           </label>
         </div>
 
-        <h4 style="margin:.8rem 0 .4rem;">Dati di contatto</h4>
+        <h4 class="thub-box__subtitle">Dati di contatto</h4>
 
         <div class="thub-toggle__row">
           <span class="thub-toggle-label">Email di contatto</span>
@@ -294,7 +292,7 @@ $thub_privacy_ajax_nonce = wp_create_nonce('thub_privacy_ajax');
           </label>
         </div>
 
-        <h4 style="margin:.8rem 0 .4rem;">I tuoi profili social</h4>
+        <h4 class="thub-box__subtitle">I tuoi profili social</h4>
 
         <div class="thub-toggle__row">
           <span class="thub-toggle-label">Profili social</span>
@@ -309,7 +307,7 @@ $thub_privacy_ajax_nonce = wp_create_nonce('thub_privacy_ajax');
           </label>
         </div>
 
-        <h4 style="margin:.8rem 0 .4rem;">Condivisione della posizione</h4>
+        <h4 class="thub-box__subtitle">Condivisione della posizione</h4>
 
         <div class="thub-toggle__row">
           <span class="thub-toggle-label">Geo‑localizzazione</span>

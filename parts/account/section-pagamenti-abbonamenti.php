@@ -64,7 +64,7 @@ $payments        = [];  // es.: [['id'=>'pi_x','date'=>'2025-08-26','desc'=>'T-H
        [THUB_PAY_HDR] Titolo/intro centrati
        =============================== -->
   <div style="text-align:center; margin: .25rem 0 1rem;">
-    <h2 class="thub-account__title" style="margin:.15rem 0 .35rem;"><b>Pagamenti e abbonamenti</b></h2>
+    <h2 class="thub-account__title">Pagamenti e abbonamenti</h2>
     <div style="height:.4rem;"></div> <!-- spazio -->
     <p class="thub-account__intro" style="margin:0; color:#444;">
       I tuoi dati di pagamento, le tue transazioni e i tuoi pagamenti ricorrenti
@@ -80,7 +80,7 @@ $payments        = [];  // es.: [['id'=>'pi_x','date'=>'2025-08-26','desc'=>'T-H
     <!-- Riga top: testo + SVG (immagine più “parlante”) -->
     <div class="[THUB_PM_TOP]" style="display:grid;grid-template-columns:1.4fr .8fr;gap:16px;align-items:center;">
       <div>
-        <h3 style="margin:.2rem 0 .3rem;">Metodi di pagamento</h3>
+        <h3 class="thub-box__title">Metodi di pagamento</h3>
         <!-- (Testo introduttivo rimosso come da richiesta) -->
       </div>
       <div aria-hidden="true" style="display:grid;place-items:center;">
@@ -166,7 +166,7 @@ $payments        = [];  // es.: [['id'=>'pi_x','date'=>'2025-08-26','desc'=>'T-H
        [BOX 2] Abbonamenti
        ========================================================= -->
   <div class="thub-box">
-    <h3 style="margin:.2rem 0 .3rem;">Abbonamenti</h3>
+    <h3 class="thub-box__title">Abbonamenti</h3>
     <p style="margin:0;">I tuoi pagamenti ricorrenti per i servizi su abbonamento</p>
 
     <details class="[THUB_SUB_DETAILS]" style="margin-top:.7rem;">
@@ -237,7 +237,7 @@ $payments        = [];  // es.: [['id'=>'pi_x','date'=>'2025-08-26','desc'=>'T-H
        [BOX 3] Transazioni (ultimi 30)
        ========================================================= -->
   <div class="thub-box">
-    <h3 style="margin:.2rem 0 .3rem;">Transazioni e attività relative ai pagamenti</h3>
+    <h3 class="thub-box__title">Transazioni e attività relative ai pagamenti</h3>
     <p style="margin:0;">Tutti i tuoi pagamenti per i servizi.</p>
 
     <details class="[THUB_TX_DETAILS]" style="margin-top:.7rem;">
@@ -293,7 +293,7 @@ $payments        = [];  // es.: [['id'=>'pi_x','date'=>'2025-08-26','desc'=>'T-H
        [BOX 4] Informazioni generali
        ========================================================= -->
   <div class="thub-box">
-    <h3 style="margin:.2rem 0 .3rem;">Informazioni generali</h3>
+    <h3 class="thub-box__title">Informazioni generali</h3>
     <p style="margin:0;">Maggiori informazioni sul tuo account</p>
 
     <details class="[THUB_INFO_DETAILS]" style="margin-top:.7rem;">
@@ -303,12 +303,12 @@ $payments        = [];  // es.: [['id'=>'pi_x','date'=>'2025-08-26','desc'=>'T-H
       </summary>
 
       <div class="[THUB_INFO_CONTENT]" style="margin-top:.45rem;">
-        <h4 style="margin:.1rem 0 .2rem;">ID profilo pagamenti</h4>
+        <h4 class="thub-box__subtitle">ID profilo pagamenti</h4>
         <p style="margin:.1rem 0 .5rem;"><code><?php echo esc_html($pay_profile_id); ?></code></p>
 
         <hr style="border:0;border-top:1px solid #eee;margin:.7rem 0;"><!-- Divider richiesto -->
 
-        <h4 style="margin:.1rem 0 .2rem;">Dati fiscali</h4>
+        <h4 class="thub-box__subtitle">Dati fiscali</h4>
         <p style="margin:0;">(da completare configurazione)</p>
       </div>
     </details>

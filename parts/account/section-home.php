@@ -118,12 +118,6 @@ if ( function_exists('thub_get_security_summary') ) {
     min-width: 0;
   }
 
-  .thub-home__content h3{
-    margin: 0 0 .4rem;
-    font-size: 1.05rem;
-    line-height: 1.35;
-  }
-
   .thub-home__content p{
     margin: 0;
     color: #444;
@@ -259,7 +253,7 @@ if ( function_exists('thub_get_security_summary') ) {
          ================================================== -->
     <article class="thub-home__card thub-home__card--personal" aria-labelledby="thub-card-personal-title">
       <div class="thub-home__content">
-        <h3 id="thub-card-personal-title">Informazioni Personali</h3>
+        <h3 id="thub-card-personal-title" class="thub-box__title">Informazioni Personali</h3>
         <p>Visualizza le informazioni nel tuo Account T-Hub e scegli quali salvare per personalizzare la tua esperienza su T-Hub.</p>
         <div class="thub-home__sep" role="separator" aria-hidden="true"></div>
         <a class="thub-home__link" href="/account/informazioni-personali/">
@@ -287,7 +281,7 @@ if ( function_exists('thub_get_security_summary') ) {
          ================================================== -->
     <article class="thub-home__card thub-home__card--privacy" aria-labelledby="thub-card-privacy-title">
       <div class="thub-home__content">
-        <h3 id="thub-card-privacy-title">Privacy e personalizzazione</h3>
+        <h3 id="thub-card-privacy-title" class="thub-box__title">Privacy e personalizzazione</h3>
         <p>Visualizza i dati nel tuo Account T-Hub e scegli quali salvare per personalizzare la tua esperienza su T-Hub.</p>
         <div class="thub-home__sep" role="separator" aria-hidden="true"></div>
         <a class="thub-home__link" href="/account/dati-privacy/">
@@ -313,7 +307,7 @@ if ( function_exists('thub_get_security_summary') ) {
          ================================================== -->
     <article class="thub-home__card thub-home__card--security" aria-labelledby="thub-card-security-title">
       <div class="thub-home__content">
-        <h3 id="thub-card-security-title"><?php echo esc_html($sec_title); ?></h3>
+        <h3 id="thub-card-security-title" class="thub-box__title"><?php echo esc_html($sec_title); ?></h3>
         <p><?php echo esc_html($sec_text); ?></p>
         <div class="thub-home__sep" role="separator" aria-hidden="true"></div>
         <a class="thub-home__link" href="/account/sicurezza/">
@@ -347,7 +341,7 @@ if ( function_exists('thub_get_security_summary') ) {
          ================================================== -->
     <article class="thub-home__card thub-home__card--info" aria-labelledby="thub-card-info-title">
       <div class="thub-home__content">
-        <h3 id="thub-card-info-title">Cerchi qualcos'altro?</h3>
+        <h3 id="thub-card-info-title" class="thub-box__title">Cerchi qualcos'altro?</h3>
         <p>Trova risorse pratiche, suggerimenti e indicazioni per ottenere risposte rapide e approfondire le funzioni che ti interessano. Un percorso guidato per chiarire dubbi, scoprire strumenti utili e migliorare l’esperienza con T-Hub.</p>
         <div class="thub-home__sep" role="separator" aria-hidden="true"></div>
         <a class="thub-home__link" href="/account/informazioni/">

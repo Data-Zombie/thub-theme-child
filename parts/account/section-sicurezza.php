@@ -100,7 +100,7 @@ $url_info_pers    = esc_url( home_url( '/account/informazioni-personali/' ) );
        [THUB_SEC_TITLE] Titolo & intro
        =========================== -->
   <header style="text-align:center; margin:.5rem 0 1rem;">
-    <h2 class="thub-account__title" style="margin:.2rem 0;">Sicurezza</h2>
+    <h2 class="thub-account__title">Sicurezza</h2>
     <div style="height:.5rem;"></div> <!-- spazio richiesto -->
     <p style="color:#555; margin:.25rem 0 .5rem;">
       Impostazioni e consigli per contribuire a mantenere sicuro il tuo account
@@ -112,7 +112,7 @@ $url_info_pers    = esc_url( home_url( '/account/informazioni-personali/' ) );
        =========================== -->
   <div class="thub-box" style="display:grid; grid-template-columns: 1.2fr .8fr; gap:1rem; align-items:center;">
     <div>
-      <h3 style="margin:.2rem 0 .4rem;">
+      <h3 class="thub-box__title">
         Il tuo account <span style="font-weight:700;"><?php echo esc_html( $status_label ); ?></span>
       </h3>
       <p style="margin:.6rem 0 0; color:#444;">
@@ -129,7 +129,7 @@ $url_info_pers    = esc_url( home_url( '/account/informazioni-personali/' ) );
        [THUB_SEC_BOX2] Come accedi a T‑Hub + Opzioni
        =========================== -->
   <div class="thub-box">
-    <h3 style="margin:.2rem 0 .4rem;">Come accedi a T‑Hub</h3>
+    <h3 class="thub-box__title">Come accedi a T‑Hub</h3>
     <p style="margin:.2rem 0 .8rem; color:#444;">
       Assicurati di poter accedere sempre al tuo Account T‑Hub tenendo aggiornate queste informazioni
     </p>
@@ -234,7 +234,7 @@ $url_info_pers    = esc_url( home_url( '/account/informazioni-personali/' ) );
        [THUB_SEC_BOX3] I tuoi dispositivi — tabella pulita
        =========================== -->
   <div class="thub-box">
-    <h3 style="margin:.2rem 0 .4rem;">I tuoi dispositivi</h3>
+    <h3 class="thub-box__title">I tuoi dispositivi</h3>
     <p style="margin:.2rem 0 .8rem; color:#444;">Dispositivi da cui hai effettuato l'accesso</p>
     <?php
     // Carica lista “device umani” popolata dagli hook in functions.php

@@ -16,9 +16,7 @@
 <!-- ===========================
      [THUB_ASSISTENZA_TITLE] Titolo e testo centrati
      =========================== -->
-<div class="thub-account__title" aria-level="1" role="heading" style="text-align:center;">
-  <b>Centro assistenza</b>
-</div>
+<h2 class="thub-account__title thub-account__title--center">Centro assistenza</h2>
 <div style="height:.25rem;"></div>
 <p style="margin:.2rem 0 1rem; color:#444; text-align:center;">Come possiamo aiutarti?</p>
 

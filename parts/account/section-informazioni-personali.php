@@ -143,7 +143,7 @@ $user_lang = get_user_meta($user_id,'thub_lang',true);
      =========================== -->
 <section class="thub-account__section thub-impostazioni-personali">
   <header class="thub-account__header" style="text-align:center; margin: .4rem 0 1rem;">
-    <h2 class="thub-account__title" style="margin:.2rem 0 .2rem;">Informazioni personali</h2>
+    <h2 class="thub-account__title">Informazioni personali</h2>
     <p style="color:#555; margin:.25rem 0 0;">
       Informazioni su di te e sulle tue preferenze nei servizi T‑Hub
     </p>
@@ -162,7 +162,7 @@ $user_lang = get_user_meta($user_id,'thub_lang',true);
     <div class="thub-intro-grid" style="display:grid; grid-template-columns:2.2fr 1fr; gap:16px; align-items:center;">
       <!-- Colonna 1: testo -->
       <div>
-        <h3 style="margin:.1rem 0 .35rem; font-size:1.05rem;">
+        <h3 class="thub-box__title">
           Le informazioni del tuo profilo nei servizi T‑Hub
         </h3>
         <p style="color:#555; margin:0;">
@@ -195,7 +195,7 @@ $user_lang = get_user_meta($user_id,'thub_lang',true);
        =========================== -->
   <div class="thub-box" style="border-color:#eee;">
     <div style="margin-bottom:.5rem;">
-      <h3 style="margin:.1rem 0 .3rem; font-size:1.05rem;">Informazioni di base</h3>
+      <h3 class="thub-box__title">Informazioni di base</h3>
       <p style="color:#555; margin:0;">
         Alcune informazioni potrebbero essere visibili ad altre persone che usano i servizi T‑Hub.
       </p>
@@ -336,7 +336,7 @@ $user_lang = get_user_meta($user_id,'thub_lang',true);
        =========================== -->
   <div class="thub-box" style="border-color:#eee;">
     <div style="margin-bottom:.5rem;">
-      <h3 style="margin:.1rem 0 .3rem; font-size:1.05rem;">Dati di contatto</h3>
+      <h3 class="thub-box__title">Dati di contatto</h3>
       <p style="color:#555; margin:0;">Gestisci gli indirizzi email associati al tuo Account T‑Hub.</p>
     </div>
 
@@ -350,13 +350,13 @@ $user_lang = get_user_meta($user_id,'thub_lang',true);
             <span aria-hidden="true">▾</span>
           </summary>
           <div style="padding:.7rem .2rem .2rem;">
-            <h4 style="margin:.1rem 0 .25rem; font-size:1rem;">Email Account T‑Hub</h4>
+            <h4 class="thub-box__subtitle">Email Account T‑Hub</h4>
             <p style="color:#555; margin:0 0 .35rem;">
               L'indirizzo che consente a te e agli altri utenti di identificare il tuo Account T‑Hub. Non puoi modificare questo indirizzo.
             </p>
             <p style="margin:0 0 .6rem;"><strong><?php echo esc_html($account_email); ?></strong></p>
 
-            <h4 style="margin:1rem 0 .25rem; font-size:1rem;">Email di recupero</h4>
+            <h4 class="thub-box__subtitle">Email di recupero</h4>
             <p style="color:#555; margin:0 0 .35rem;">
               L'indirizzo al quale T‑Hub può contattarti se rileva attività insolite nel tuo account o se non riesci più ad accedere.
             </p>
@@ -371,7 +371,7 @@ $user_lang = get_user_meta($user_id,'thub_lang',true);
                        style="width:100%;padding:.5rem .6rem;border:1px solid #ddd;border-radius:.6rem;">
               </label>
 
-              <h4 style="margin:1rem 0 .25rem; font-size:1rem;">Email di contatto</h4>
+              <h4 class="thub-box__subtitle">Email di contatto</h4>
               <p style="color:#555; margin:0 0 .35rem;">
                 L'indirizzo a cui ti vengono inviate le informazioni sulla maggior parte dei prodotti T‑Hub che utilizzi con questo account.
               </p>
@@ -513,7 +513,7 @@ $user_lang = get_user_meta($user_id,'thub_lang',true);
        =========================== -->
   <div class="thub-box" style="border-color:#eee;">
     <div style="margin-bottom:.5rem;">
-      <h3 style="margin:.1rem 0 .3rem; font-size:1.05rem;">Indirizzi</h3>
+      <h3 class="thub-box__title">Indirizzi</h3>
       <p style="color:#555; margin:0;">
         I tuoi indirizzi di casa e di lavoro vengono utilizzati per personalizzare le tue esperienze su tutti i prodotti T‑Hub e per rendere più pertinenti gli annunci.
         Puoi anche aggiungere indirizzi al tuo profilo T‑Hub.
@@ -530,7 +530,7 @@ $user_lang = get_user_meta($user_id,'thub_lang',true);
             <span aria-hidden="true">▾</span>
           </summary>
           <div style="padding:.7rem .2rem .2rem;">
-            <h4 style="margin:.1rem 0 .25rem; font-size:1rem;">Indirizzo di casa</h4>
+            <h4 class="thub-box__subtitle">Indirizzo di casa</h4>
 
             <form method="post" action="<?php echo esc_url( admin_url('admin-post.php') ); ?>">
               <?php wp_nonce_field('thub_update_address_home','thub_nonce_addr_home'); ?>
@@ -625,7 +625,7 @@ $user_lang = get_user_meta($user_id,'thub_lang',true);
             <span aria-hidden="true">▾</span>
           </summary>
           <div style="padding:.7rem .2rem .2rem;">
-            <h4 style="margin:.1rem 0 .25rem; font-size:1rem;">Indirizzo di lavoro</h4>
+            <h4 class="thub-box__subtitle">Indirizzo di lavoro</h4>
 
             <form method="post" action="<?php echo esc_url( admin_url('admin-post.php') ); ?>">
               <?php wp_nonce_field('thub_update_address_work','thub_nonce_addr_work'); ?>
@@ -714,7 +714,7 @@ $user_lang = get_user_meta($user_id,'thub_lang',true);
        =========================== -->
   <div class="thub-box" style="border-color:#eee;">
     <div style="margin-bottom:.5rem;">
-      <h3 style="margin:.1rem 0 .3rem; font-size:1.05rem;">I tuoi profili social</h3>
+      <h3 class="thub-box__title">I tuoi profili social</h3>
       <p style="color:#555; margin:0;">I tuoi profili social vengono resi visibili alle altre persone.</p>
     </div>
 
@@ -814,7 +814,7 @@ $user_lang = get_user_meta($user_id,'thub_lang',true);
           style="display:grid;grid-template-columns:1.2fr 1fr;gap:16px;align-items:center;margin:.4rem 0 1rem;">
     <!-- Colonna 1: testo -->
     <div>
-      <h3 id="thub-prefs-title" style="margin:.1rem 0rem .35rem; font-size:1.05rem;">
+      <h3 id="thub-prefs-title" class="thub-box__title">
         Altre informazioni e preferenze per i servizi T‑Hub
       </h3>
       <p style="color:#555; margin:0;">
@@ -865,7 +865,7 @@ $user_lang = get_user_meta($user_id,'thub_lang',true);
        style="display:block;border-color:#eee;text-decoration:none;color:inherit;">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
         <div>
-          <h3 style="margin:.1rem 0 .3rem; font-size:1.05rem;">Password</h3>
+          <h3 class="thub-box__title">Password</h3>
           <p style="color:#555; margin:0;">Una password efficace contribuisce a proteggere il tuo account T‑Hub.</p>
         </div>
         <div aria-hidden="true" style="font-size:1.2rem;">›</div>
@@ -877,7 +877,7 @@ $user_lang = get_user_meta($user_id,'thub_lang',true);
        style="display:block;border-color:#eee;text-decoration:none;color:inherit;">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
         <div>
-          <h3 style="margin:.1rem 0 .3rem; font-size:1.05rem;">Preferenze generali per il web</h3>
+          <h3 class="thub-box__title">Preferenze generali per il web</h3>
           <p style="color:#555; margin:0;">Gestisci le impostazioni dei servizi T‑Hub sul Web</p>
           <div style="margin-top:.4rem;">
             <strong>Lingua:</strong> <span><?php echo $user_lang ? esc_html($user_lang) : '—'; ?></span>

@@ -2264,3 +2264,182 @@ function thub_get_security_summary($user_id){
     'has_email'    => $has_email,
   ]);
 }
+
+/* ============================================================
+   [THUB_SEARCH_HISTORY_DB] — Setup tabella custom per cronologia
+   Tabella: {$wpdb->prefix}thub_search_history
+   Campi: id, user_id, query, ts_utc (datetime), meta (json testuale)
+   ============================================================ */
+add_action('init', function(){
+  if( ! is_user_logged_in() ) return; // inizializziamo comunque al primo hit di un loggato
+  $opt_key = 'thub_search_history_db_ver';
+  $current = (int) get_option($opt_key, 0);
+  $target  = 1;
+
+  if($current >= $target) return;
+
+  global $wpdb;
+  $table = $wpdb->prefix . 'thub_search_history';
+  $charset_collate = $wpdb->get_charset_collate();
+  $sql = "CREATE TABLE {$table} (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    user_id BIGINT UNSIGNED NOT NULL,
+    query TEXT NOT NULL,
+    ts_utc DATETIME NOT NULL,
+    meta TEXT NULL,
+    PRIMARY KEY (id),
+    KEY user_ts (user_id, ts_utc)
+  ) {$charset_collate};";
+
+  require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+  dbDelta($sql);
+
+  update_option($opt_key, $target, true);
+});
+
+/* ===================================================================
+   [THUB_SEARCH_HISTORY_LOG] — Salvataggio ricerche lato server
+   Quando l'utente esegue una ricerca (is_search && s != ''), registriamo
+   query + timestamp UTC per l'utente loggato.
+   =================================================================== */
+add_action('template_redirect', function(){
+  if( ! is_user_logged_in() ) return;
+  if( ! is_search() ) return;
+
+  $q = get_search_query();
+  if( ! $q ) return;
+
+  $user_id = get_current_user_id();
+  global $wpdb;
+  $table = $wpdb->prefix . 'thub_search_history';
+
+  /* [THUB_HISTORY_GUARD] — Rispetta il toggle “Disattiva cronologia”
+  Se user_meta('thub_priv_history') === '1' → NON loggare */
+  if ( get_user_meta( $user_id, 'thub_priv_history', true ) === '1' ) {
+    return;
+  }
+
+  // Inserisci riga (ts in UTC)
+  $now_utc = gmdate('Y-m-d H:i:s');
+  $wpdb->insert($table, [
+    'user_id' => $user_id,
+    'query'   => wp_strip_all_tags( $q ),
+    'ts_utc'  => $now_utc,
+    'meta'    => null, // opzionale: puoi salvare filtri, device, ecc.
+  ], ['%d','%s','%s','%s']);
+
+  // Pulizia: manteniamo solo ultimi 30 giorni per questo utente
+  $cutoff = gmdate('Y-m-d H:i:s', time() - 30*DAY_IN_SECONDS);
+  $wpdb->query( $wpdb->prepare(
+    "DELETE FROM {$table} WHERE user_id = %d AND ts_utc < %s",
+    $user_id, $cutoff
+  ) );
+});
+
+/* ============================================================
+   [THUB_SEARCH_HISTORY_AJAX_LIST] — thub_get_search_history
+   Ritorna JSON: items = [{id, query, ts_iso, day_label}, ...]
+   ============================================================ */
+add_action('wp_ajax_thub_get_search_history', function(){
+  check_ajax_referer('thub_search_history_nonce');
+
+  if( ! is_user_logged_in() ){
+    wp_send_json([ 'items' => [] ]);
+  }
+
+  $user_id = get_current_user_id();
+
+  // [THUB_HISTORY_GUARD_VIEW] Non mostrare nulla se cronologia disattivata
+  if ( get_user_meta( $user_id, 'thub_priv_history', true ) === '1' ) {
+    wp_send_json([ 'items' => [] ]);
+  }
+
+  global $wpdb;
+  $table  = $wpdb->prefix . 'thub_search_history';
+  $cutoff = gmdate('Y-m-d H:i:s', time() - 30*DAY_IN_SECONDS);
+
+  $rows = $wpdb->get_results( $wpdb->prepare(
+    "SELECT id, query, ts_utc
+     FROM {$table}
+     WHERE user_id = %d AND ts_utc >= %s
+     ORDER BY ts_utc DESC
+     LIMIT 500",
+    $user_id, $cutoff
+  ), ARRAY_A );
+
+  $items = [];
+  if($rows){
+    $tz = wp_timezone();
+    foreach($rows as $r){
+      $dt = date_create_from_format('Y-m-d H:i:s', $r['ts_utc'], new DateTimeZone('UTC'));
+      if($dt){
+        $dt->setTimezone($tz);
+        $ts_iso    = $dt->format('c');
+        $day_label = wp_date( 'l j F Y', $dt->getTimestamp(), $tz );
+      }else{
+        $ts_iso    = gmdate('c');
+        $day_label = '';
+      }
+      $items[] = [
+        'id'        => (int) $r['id'],
+        'query'     => $r['query'],
+        'ts_iso'    => $ts_iso,
+        'day_label' => $day_label,
+      ];
+    }
+  }
+
+  wp_send_json([ 'items' => $items ]);
+});
+
+/* ============================================================
+   [THUB_SEARCH_HISTORY_AJAX_DELETE] — thub_delete_search_item
+   ============================================================ */
+add_action('wp_ajax_thub_delete_search_item', function(){
+  check_ajax_referer('thub_search_history_nonce');
+
+  if( ! is_user_logged_in() ){
+    wp_send_json([ 'success' => false ]);
+  }
+
+  $id = (int) ($_POST['id'] ?? 0);
+  if($id <= 0){
+    wp_send_json([ 'success' => false ]);
+  }
+
+  global $wpdb;
+  $user_id = get_current_user_id();
+  $table   = $wpdb->prefix . 'thub_search_history';
+
+  // Cancella solo se appartiene all'utente corrente
+  $deleted = $wpdb->query( $wpdb->prepare(
+    "DELETE FROM {$table} WHERE id = %d AND user_id = %d",
+    $id, $user_id
+  ) );
+
+  wp_send_json([ 'success' => (bool) $deleted ]);
+});
+
+/* ============================================================
+   [THUB_SEARCH_HISTORY_AJAX_CLEAR] — thub_clear_search_history
+   ============================================================ */
+add_action('wp_ajax_thub_clear_search_history', function(){
+  check_ajax_referer('thub_search_history_nonce');
+
+  if( ! is_user_logged_in() ){
+    wp_send_json([ 'success' => false ]);
+  }
+
+  global $wpdb;
+  $user_id = get_current_user_id();
+  $table   = $wpdb->prefix . 'thub_search_history';
+  $cutoff  = gmdate('Y-m-d H:i:s', time() - 30*DAY_IN_SECONDS);
+
+  // Cancella solo il range mantenuto (ultimi 30 giorni)
+  $deleted = $wpdb->query( $wpdb->prepare(
+    "DELETE FROM {$table} WHERE user_id = %d AND ts_utc >= %s",
+    $user_id, $cutoff
+  ) );
+
+  wp_send_json([ 'success' => true, 'deleted' => (int) $deleted ]);
+});
