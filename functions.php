@@ -3327,9 +3327,14 @@ if ( ! function_exists('thub_save_user_recipe_handler') ) {
     }
 
     $redirect = get_permalink($post_id);
-    $message  = ($post_status==='draft')   ? 'Bozza salvata.' :
-                ($post_status==='pending') ? 'Richiesta inviata: in attesa di approvazione.' :
-                ($post_status==='private') ? 'Ricetta privata salvata.' : 'Ricetta salvata.';
+
+    /* [THUB_MSG_BLOCK] (PHP 8+) — niente ternarie annidate */
+    $message = match ($post_status) {
+      'draft'   => 'Bozza salvata.',
+      'pending' => 'Richiesta inviata: in attesa di approvazione.',
+      'private' => 'Ricetta privata salvata.',
+      default   => 'Ricetta salvata.',
+    };
 
     wp_send_json( [ 'success'=>true, 'message'=>$message, 'redirect'=>$redirect ] );
   }
