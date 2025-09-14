@@ -10,7 +10,9 @@ $porz_base = (int) (get_field('porzioni_base') ?: 1);
       $nome = $r['ing_nome'] ?? '';
       $qta  = (float) ($r['ing_qta'] ?? 0);
       $unit = $r['ing_unita'] ?? '';
-      if($unit==='Altro') $unit = $r['ing_unita_altro'] ?? '';
+      if (strcasecmp($unit, 'altro') === 0) {
+        $unit = $r['ing_unita_altro'] ?? '';
+      }
       ?>
       <li class="thub-ing"
           data-base-qta="<?php echo esc_attr($qta); ?>"

@@ -1,428 +1,666 @@
 <?php
 /**
+ * ============================================================
  * [THUB_CANVAS_SECTION: nuova-ricetta]
- * Section: Crea nuova ricetta (frontend editor)
- * Layout coerente con le altre section Canvas.
- * Salvataggio via AJAX → handler in functions.php [THUB_SAVE_USER_RECIPE_AJAX]
+ * Editor creazione ricetta — Canonico-Only
+ * Rev: 2025-09-14 (patch stile account + fix repeater + validazione)
+ * ============================================================
  */
-if ( ! defined('ABSPATH') ) exit;
+if (!defined('ABSPATH')) exit;
 
-// -- [THUB_NR_NONCE] Nonce per sicurezza
-$thub_nr_nonce = wp_create_nonce('thub_save_user_recipe');
-$ajaxurl = admin_url('admin-ajax.php');
-$current_user_can_publish = is_user_logged_in(); // controllo base; publish è validato anche server-side
+$ajaxurl  = admin_url('admin-ajax.php');
+$nr_nonce = wp_create_nonce('thub_save_user_recipe');
+$user_id  = get_current_user_id();
+$is_pro   = function_exists('thub_is_pro') ? thub_is_pro($user_id) : false;
 ?>
+<section class="thub-canvas-section thub-nr">
 
-<section class="thub-canvas-section thub-nuova-ricetta"><!-- [THUB_NR_SECTION_WRAPPER] -->
-  <!-- Titolo + sottotitolo -->
-  <header class="thub-nr-header">
-    <h1 class="thub-title">Inserisci la tua ricetta</h1>
-    <p class="thub-subtitle">Ti diamo il benvenuto nell'editor di creazione delle tue ricette</p>
+  <header class="thub-nr__head">
+    <h1 class="thub-nr__title">Inserisci la tua ricetta</h1>
+    <p class="thub-nr__subtitle">Ti diamo il benvenuto nell'editor di creazione delle tue ricette</p>
   </header>
 
-  <!-- ===========================
-       [THUB_NR_FORM] Form principale
-       =========================== -->
   <form id="thub-nr-form"
-        class="thub-nr-form"
+        class="thub-nr__form"
         method="post"
         action="<?php echo esc_url($ajaxurl); ?>"
-        novalidate
-        data-ajaxurl="<?php echo esc_url($ajaxurl); ?>"
-        data-nonce="<?php echo esc_attr($thub_nr_nonce); ?>">
+        enctype="multipart/form-data"
+        data-ajaxurl="<?php echo esc_attr($ajaxurl); ?>"
+        data-nonce="<?php echo esc_attr($nr_nonce); ?>"
+        data-is-pro="<?php echo $is_pro ? '1':'0'; ?>">
 
-    <input type="hidden" name="action" value="thub_save_user_recipe"><!-- [THUB_NR_ACTION] -->
-    <input type="hidden" name="thub_nr_nonce" value="<?php echo esc_attr($thub_nr_nonce); ?>">
+    <input type="hidden" name="action" value="thub_save_user_recipe">
+    <input type="hidden" name="thub_nr_nonce" value="<?php echo esc_attr($nr_nonce); ?>">
     <input type="hidden" name="thub_submit_type" id="thub_submit_type" value="draft"><!-- draft|publish -->
 
-    <!-- ================== BOX 1 — full width ================== -->
-    <div class="thub-box"><!-- [THUB_NR_BOX1] -->
+    <!-- ======================= BOX 1 ======================= -->
+    <div class="thub-box thub-box--full">
       <div class="thub-grid thub-grid--2">
-        <!-- Colonna 1: SVG cappello -->
         <div class="thub-col thub-col--center">
-          <!-- [THUB_NR_CHEF_HAT] SVG cappello da chef (centrato) -->
           <div class="thub-chef-hat" aria-hidden="true">
             <svg viewBox="0 0 120 120" role="img" aria-label="Crea ricetta">
               <title>Crea ricetta</title>
-              <defs>
-                <linearGradient id="thubHatG" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0" stop-color="#f2f2f2"/>
-                  <stop offset="1" stop-color="#e0e0e0"/>
-                </linearGradient>
-              </defs>
-              <circle cx="60" cy="60" r="50" fill="#fff3e6"/>
-              <path d="M40 60c-8 0-14-6-14-14s6-14 14-14c4 0 7 1 10 4 3-3 6-4 10-4s7 1 10 4c3-3 6-4 10-4 8 0 14 6 14 14s-6 14-14 14H40z" fill="url(#thubHatG)"/>
+              <circle cx="60" cy="60" r="50" fill="#fff3e6"></circle>
+              <path d="M40 60c-8 0-14-6-14-14s6-14 14-14c4 0 7 1 10 4 3-3 6-4 10-4s7 1 10 4c3-3 6-4 10-4 8 0 14 6 14 14s-6 14-14 14H40z" fill="#eaeaea"/>
               <rect x="42" y="60" width="36" height="22" rx="6" ry="6" fill="#ffd6a1"/>
               <rect x="46" y="82" width="28" height="8" rx="4" ry="4" fill="#ffbd6b"/>
             </svg>
           </div>
         </div>
 
-        <!-- Colonna 2: Titolo + Intro -->
         <div class="thub-col">
-          <!-- Titolo ricetta -->
-          <label class="thub-label" for="thub_titolo">Titolo ricetta</label>
-          <input type="text" id="thub_titolo" name="post_title"
-                 placeholder="Titolo ricetta"
-                 maxlength="120"
-                 class="thub-input"
-                 required>
-          <p class="thub-help">(max ~50 caratteri consigliati)</p>
+          <!-- Titolo -->
+          <div class="thub-field">
+            <input type="text" name="post_title" id="thub_title" class="thub-input"
+                   placeholder="Titolo ricetta" maxlength="120" required>
+            <div class="thub-row-helpers">
+              <p class="thub-help">(max ~50 caratteri consigliati)</p>
+              <span class="thub-count" data-for="thub_title" data-rec="50">0/50</span>
+            </div>
+          </div>
 
-          <!-- Breve descrizione -->
-          <label class="thub-label mt" for="thub_intro_breve">Breve descrizione</label>
-          <input type="text" id="thub_intro_breve" name="intro_breve"
-                 placeholder="Breve descrizione"
-                 maxlength="180"
-                 class="thub-input">
-          <p class="thub-help">(max ~150 caratteri consigliati)</p>
+          <div class="thub-spacer"></div>
+
+          <!-- Intro -->
+          <div class="thub-field">
+            <input type="text" name="intro_breve" id="thub_intro" class="thub-input"
+                   placeholder="Breve descrizione" maxlength="180" required>
+            <div class="thub-row-helpers">
+              <p class="thub-help">(max ~150 caratteri consigliati)</p>
+              <span class="thub-count" data-for="thub_intro" data-rec="150">0/150</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- ================== BOX 2 — full width ================== -->
-    <div class="thub-box"><!-- [THUB_NR_BOX2] -->
+    <!-- ======================= BOX 2 ======================= -->
+    <div class="thub-box thub-box--full">
       <div class="thub-grid thub-grid--4">
         <div class="thub-col">
-          <label class="thub-label" for="thub_porzioni">Porzioni base</label>
-          <input type="number" min="1" step="1" id="thub_porzioni" name="porzioni_base" class="thub-input" placeholder="Es. 4" required>
+          <div class="thub-label">Porzioni base</div>
+          <!-- input hidden inviato al server -->
+          <input type="hidden" name="porzioni_base" value="1">
+          <!-- input UI non cliccabile (no focus, no selection) -->
+          <input type="text" class="thub-input thub-input--ro thub-input--static" value="1"
+                 disabled tabindex="-1" aria-disabled="true"><!-- [THUB_RO_STATIC] -->
         </div>
         <div class="thub-col">
-          <label class="thub-label" for="thub_kcal">Kcal per porzione</label>
-          <input type="number" min="0" step="1" id="thub_kcal" name="kcal_per_porz" class="thub-input" placeholder="Es. 350">
+          <div class="thub-label">Kcal per porzione</div>
+          <input type="number" name="kcal_per_porz" class="thub-input" placeholder="Es. 350" required>
         </div>
         <div class="thub-col">
-          <label class="thub-label" for="thub_tprep">Tempo di preparazione</label>
-          <input type="text" id="thub_tprep" name="tempo_di_preparazione" class="thub-input" placeholder="Es. 20 min">
+          <div class="thub-label">Tempo di preparazione</div>
+          <input type="text" name="tempo_di_preparazione" class="thub-input" placeholder="Es. 20 min" required>
         </div>
         <div class="thub-col">
-          <label class="thub-label" for="thub_tcott">Tempo di cottura</label>
-          <input type="text" id="thub_tcott" name="tempo_di_cottura" class="thub-input" placeholder="Es. 30 min">
+          <div class="thub-label">Tempo di cottura</div>
+          <input type="text" name="tempo_di_cottura" class="thub-input" placeholder="Es. 30 min" required>
         </div>
       </div>
     </div>
 
-    <!-- ================== BOX 3 — full width ================== -->
-    <div class="thub-box"><!-- [THUB_NR_BOX3] -->
-      <label class="thub-label" for="thub_video_url">Link Video</label>
-      <input type="url" id="thub_video_url" name="video_url" class="thub-input" placeholder="https://...">
+    <!-- ======================= BOX 3 (2 sub-box affiancati) ======================= -->
+    <div class="thub-grid thub-grid--2"><!-- due “box” sulla stessa riga -->
+      <div class="thub-subbox">
+        <div class="thub-label">Link Video</div>
+        <input type="url" name="video_url" class="thub-input" placeholder="https://...">
+      </div>
+      <div class="thub-subbox">
+        <div class="thub-label">Immagine della ricetta</div>
+        <input type="file" name="thub_recipe_image" class="thub-input thub-input--file" accept="image/*" required>
+      </div>
     </div>
 
-    <!-- ================== BOX 4 — full width (Ingredienti strutturati) ================== -->
-    <div class="thub-box"><!-- [THUB_NR_BOX4] -->
-      <h3 class="thub-box-title">Ingredienti strutturati</h3>
-      <div id="thub-ing-repeater" class="thub-repeater" data-next-index="1">
-        <!-- Riga template (clonata da JS) -->
-        <template id="tpl-ing-row"><!-- [THUB_NR_ING_TEMPLATE] -->
-          <div class="thub-grid thub-grid--3 thub-repeater-row">
-            <div class="thub-col">
-              <label class="thub-sr-only">Nome ingrediente</label>
-              <input type="text" name="ingredienti[__i__][nome]" class="thub-input" placeholder="Nome ingrediente" required>
-            </div>
-            <div class="thub-col">
-              <label class="thub-sr-only">Quantità</label>
-              <input type="text" name="ingredienti[__i__][qta]" class="thub-input" placeholder="Quantità (es. 200)">
-            </div>
-            <div class="thub-col thub-grid thub-grid--2xs thub-unit">
-              <div>
-                <label class="thub-sr-only">Unità</label>
-                <select name="ingredienti[__i__][unita]" class="thub-input">
-                  <option value="">Unità</option>
-                  <option value="g">g</option>
-                  <option value="ml">ml</option>
-                  <option value="pz">pezzo</option>
-                  <option value="altro">Altro…</option>
-                </select>
-              </div>
-              <div>
-                <label class="thub-sr-only">Altro (unità)</label>
-                <input type="text" name="ingredienti[__i__][unita_altro]" class="thub-input" placeholder="Specifica" />
-              </div>
-              <button type="button" class="thub-btn thub-btn--ghost thub-repeater-remove" aria-label="Rimuovi ingrediente">&times;</button>
-            </div>
-          </div>
-        </template>
+    <!-- ======================= BOX 4 — Ingredienti (Repeater) ======================= -->
+    <div class="thub-box thub-box--full">
+      <h3 class="thub-box__title">Ingredienti strutturati</h3>
 
-        <!-- Prima riga iniziale -->
-        <div class="thub-grid thub-grid--3 thub-repeater-row">
-          <div class="thub-col">
-            <label class="thub-sr-only">Nome ingrediente</label>
-            <input type="text" name="ingredienti[0][nome]" class="thub-input" placeholder="Nome ingrediente" required>
+      <div id="thub-ing-repeater" class="thub-repeater" data-next-index="1">
+        <div class="thub-repeater-row thub-ing-row">
+          <input type="text" class="thub-input" name="ingredienti[0][nome]" placeholder="Nome ingrediente" required>
+          <input type="text" class="thub-input" name="ingredienti[0][qta]"  placeholder="Quantità">
+          <div class="thub-grid thub-grid--2xs thub-ing-unitwrap">
+            <select class="thub-input thub-unit" name="ingredienti[0][unita]">
+              <option value="">Unità</option>
+              <option value="g">g</option>
+              <option value="ml">ml</option>
+              <option value="pz">pezzo</option>
+              <option value="altro">Altro…</option>
+            </select>
+            <input type="text" class="thub-input thub-unit-other" name="ingredienti[0][unita_altro]" placeholder="Specifica" />
           </div>
-          <div class="thub-col">
-            <label class="thub-sr-only">Quantità</label>
-            <input type="text" name="ingredienti[0][qta]" class="thub-input" placeholder="Quantità (es. 200)">
-          </div>
-          <div class="thub-col thub-grid thub-grid--2xs thub-unit">
-            <div>
-              <label class="thub-sr-only">Unità</label>
-              <select name="ingredienti[0][unita]" class="thub-input">
+          <button type="button" class="thub-btn thub-repeater-remove thub-btn--x" aria-label="Rimuovi ingrediente">×</button>
+        </div>
+
+        <template id="tpl-ing-row">
+          <div class="thub-repeater-row thub-ing-row">
+            <input type="text" class="thub-input" name="ingredienti[__i__][nome]" placeholder="Nome ingrediente" required>
+            <input type="text" class="thub-input" name="ingredienti[__i__][qta]"  placeholder="Quantità">
+            <div class="thub-grid thub-grid--2xs thub-ing-unitwrap">
+              <select class="thub-input thub-unit" name="ingredienti[__i__][unita]">
                 <option value="">Unità</option>
                 <option value="g">g</option>
                 <option value="ml">ml</option>
                 <option value="pz">pezzo</option>
                 <option value="altro">Altro…</option>
               </select>
+              <input type="text" class="thub-input thub-unit-other" name="ingredienti[__i__][unita_altro]" placeholder="Specifica" />
             </div>
-            <div>
-              <label class="thub-sr-only">Altro (unità)</label>
-              <input type="text" name="ingredienti[0][unita_altro]" class="thub-input" placeholder="Specifica" />
-            </div>
-            <button type="button" class="thub-btn thub-btn--ghost thub-repeater-remove" aria-label="Rimuovi ingrediente">&times;</button>
+            <button type="button" class="thub-btn thub-repeater-remove thub-btn--x" aria-label="Rimuovi ingrediente">×</button>
           </div>
-        </div>
+        </template>
 
         <div class="thub-repeater-ctrl">
-          <button type="button" id="thub-ing-add" class="thub-btn thub-btn--secondary">+ Aggiungi ingrediente</button>
+          <button type="button" id="thub-ing-add" class="thub-btn thub-btn--primary">+ Aggiungi ingrediente</button>
         </div>
       </div>
     </div>
 
-    <!-- ================== BOX 5 — full width (Icona ricetta) ================== -->
-    <div class="thub-box"><!-- [THUB_NR_BOX5] -->
-      <div class="thub-grid thub-grid--2">
-        <div class="thub-col">
-          <label class="thub-label">Icona</label>
-          <!-- [THUB_NR_ICON_SELECT] Lista icone; coerente con nomenclatura “attrezzature” -->
-          <select name="ricetta_icona" class="thub-input">
-            <option value="">— Seleziona icona —</option>
+    <!-- ======================= BOX 5 — Attrezzature (Repeater) ======================= -->
+    <div class="thub-box thub-box--full">
+      <h3 class="thub-box__title">Attrezzature</h3>
+
+      <div id="thub-tool-repeater" class="thub-repeater" data-next-index="1">
+        <div class="thub-repeater-row thub-tool-row">
+          <select name="attrezzature[0][key]" class="thub-input">
+            <option value="">— Attrezzatura utilizzata —</option>
             <option value="forno">Forno</option>
             <option value="pentola">Pentola</option>
             <option value="padella">Padella</option>
             <option value="frusta">Frusta</option>
             <option value="teglia">Teglia</option>
             <option value="coltello">Coltello</option>
+            <option value="custom_svg">SVG personalizzato</option>
           </select>
+          <input type="text" name="attrezzature[0][testo]" class="thub-input" placeholder="Descrizione breve (facoltativa)">
+          <button type="button" class="thub-btn thub-repeater-remove thub-btn--x" aria-label="Rimuovi attrezzatura">×</button>
         </div>
-        <div class="thub-col">
-          <label class="thub-label">Descrizione icona</label>
-          <input type="text" name="ricetta_icona_desc" class="thub-input" placeholder="Breve descrizione (facoltativa)">
-        </div>
-      </div>
-    </div>
 
-    <!-- ================== BOX 6 — full width (Passaggi preparatori) ================== -->
-    <div class="thub-box"><!-- [THUB_NR_BOX6] -->
-      <h3 class="thub-box-title">Passaggi preparatori</h3>
-
-      <div id="thub-steps-repeater" class="thub-repeater" data-next-index="2">
-        <template id="tpl-step-row"><!-- [THUB_NR_STEP_TEMPLATE] -->
-          <div class="thub-repeater-row thub-grid thub-grid--1">
-            <div class="thub-col thub-grid thub-grid--step">
-              <span class="thub-step-idx">#<span class="n">__i__</span></span>
-              <input type="text" name="passaggi[__i__]" class="thub-input" placeholder="Descrizione passaggio __i__" required>
-              <button type="button" class="thub-btn thub-btn--ghost thub-repeater-remove" aria-label="Rimuovi passaggio">&times;</button>
-            </div>
+        <template id="tpl-tool-row">
+          <div class="thub-repeater-row thub-tool-row">
+            <select name="attrezzature[__i__][key]" class="thub-input">
+              <option value="">— Attrezzatura utilizzata —</option>
+              <option value="forno">Forno</option>
+              <option value="pentola">Pentola</option>
+              <option value="padella">Padella</option>
+              <option value="frusta">Frusta</option>
+              <option value="teglia">Teglia</option>
+              <option value="coltello">Coltello</option>
+              <option value="custom_svg">SVG personalizzato</option>
+            </select>
+            <input type="text" name="attrezzature[__i__][testo]" class="thub-input" placeholder="Descrizione breve (facoltativa)">
+            <button type="button" class="thub-btn thub-repeater-remove thub-btn--x" aria-label="Rimuovi attrezzatura">×</button>
           </div>
         </template>
 
-        <!-- Passaggio 1 iniziale -->
-        <div class="thub-repeater-row thub-grid thub-grid--1">
-          <div class="thub-col thub-grid thub-grid--step">
-            <span class="thub-step-idx">#<span class="n">1</span></span>
-            <input type="text" name="passaggi[1]" class="thub-input" placeholder="Descrizione passaggio 1" required>
-            <button type="button" class="thub-btn thub-btn--ghost thub-repeater-remove" aria-label="Rimuovi passaggio">&times;</button>
+        <div class="thub-repeater-ctrl">
+          <button type="button" id="thub-tool-add" class="thub-btn thub-btn--primary">+ Aggiungi attrezzatura</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================= BOX 6 — Passaggi (Repeater) ======================= -->
+    <div class="thub-box thub-box--full">
+      <h3 class="thub-box__title">Passaggi preparatori</h3>
+
+      <div id="thub-steps-repeater" class="thub-repeater" data-next-index="2">
+        <div class="thub-repeater-row thub-step-row">
+          <span class="thub-step-idx">#1</span>
+          <input type="text" class="thub-input" name="passaggi[1]" placeholder="Descrizione passaggio 1" required>
+          <button type="button" class="thub-btn thub-repeater-remove thub-btn--x" aria-label="Rimuovi passaggio">×</button>
+        </div>
+
+        <template id="tpl-step-row">
+          <div class="thub-repeater-row thub-step-row">
+            <span class="thub-step-idx">#__i__</span>
+            <input type="text" class="thub-input" name="passaggi[__i__]" placeholder="Descrizione passaggio __i__" required>
+            <button type="button" class="thub-btn thub-repeater-remove thub-btn--x" aria-label="Rimuovi passaggio">×</button>
+          </div>
+        </template>
+
+        <div class="thub-repeater-ctrl">
+          <button type="button" id="thub-step-add" class="thub-btn thub-btn--primary">+ Aggiungi passaggio</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================= BOX 7 — Note ======================= -->
+    <div class="thub-box thub-box--full">
+      <h3 class="thub-box__title">Eventuali note tecniche</h3>
+      <textarea name="eventuali_note_tecniche" class="thub-input thub-input--area" rows="6"
+                placeholder="Eventuali note tecniche, consigli, avvertenze."></textarea>
+    </div>
+
+    <!-- ======================= BOX 8 — Vino ======================= -->
+    <div class="thub-box thub-box--full">
+      <h3 class="thub-box__title">Vino di accompagnamento</h3>
+      <div class="thub-grid thub-grid--2">
+        <div class="thub-col">
+          <input type="text" class="thub-input" name="vino_nome" placeholder="Nome e anno di produzione">
+        </div>
+        <div class="thub-col">
+          <input type="text" class="thub-input" name="vino_denominazione" placeholder="Cantina di produzione">
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================= BOX 9 — Destinazione ======================= -->
+    <div class="thub-box thub-box--full">
+      <h3 class="thub-box__title">Salva in bozza o scegli dove salvare</h3>
+      <div class="thub-grid thub-grid--2">
+        <div class="thub-col">
+          <label class="thub-radio">
+            <input type="radio" name="ricetta_dest" value="nonna" checked>
+            <span>Salva in: Ricette della Nonna</span>
+            <span class="thub-i" data-tip="Pubblica in Ricette della Nonna e scegli se la visualizzazione è pubblica o privata">i</span>
+          </label>
+          <div id="thub-nonna-sub" class="thub-nested">
+            <label class="thub-radio">
+              <input type="radio" name="nonna_vis" value="pubblica" checked>
+              <span>Ricetta Pubblica (richiede approvazione)</span>
+            </label>
+            <label class="thub-radio">
+              <input type="radio" name="nonna_vis" value="privata">
+              <span>Ricetta Privata (visibile solo a te)</span>
+            </label>
           </div>
         </div>
 
-        <div class="thub-repeater-ctrl">
-          <button type="button" id="thub-step-add" class="thub-btn thub-btn--secondary">+ Aggiungi passaggio</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- ================== BOX 7 — full width (Note tecniche) ================== -->
-    <div class="thub-box"><!-- [THUB_NR_BOX7] -->
-      <label class="thub-label" for="thub_note">Eventuali note tecniche</label>
-      <textarea id="thub_note" name="eventuali_note_tecniche" class="thub-input" rows="6" placeholder="Note tecniche, consigli, avvertenze..."></textarea>
-    </div>
-
-    <!-- ================== BOX 8 — full width (Vino di accompagnamento) ================== -->
-    <div class="thub-box"><!-- [THUB_NR_BOX8] -->
-      <h3 class="thub-box-title">Vino di accompagnamento</h3>
-      <div class="thub-grid thub-grid--2">
         <div class="thub-col">
-          <label class="thub-label" for="thub_vino_nome">Nome e anno di produzione</label>
-          <input type="text" id="thub_vino_nome" name="vino_nome" class="thub-input" placeholder="Es. Barolo 2018">
-        </div>
-        <div class="thub-col">
-          <label class="thub-label" for="thub_vino_cantina">Cantina di produzione</label>
-          <input type="text" id="thub_vino_cantina" name="vino_denominazione" class="thub-input" placeholder="Es. Cantina Marchesi...">
-        </div>
-      </div>
-    </div>
-
-    <!-- ================== BOX 9 — full width (Completamento) ================== -->
-    <div class="thub-box"><!-- [THUB_NR_BOX9] -->
-      <h3 class="thub-box-title">Completa o salva per dopo</h3>
-
-      <div class="thub-grid thub-grid--4 thub-align-center">
-        <!-- Radio: Ricette della Nonna -->
-        <div class="thub-col">
-          <label class="thub-radio">
-            <input type="radio" name="ricetta_visibilita" value="nonna" checked>
-            <span>Salva in “Ricette della Nonna”</span>
+          <label class="thub-radio <?php echo $is_pro ? '' : 'is-disabled'; ?>">
+            <input type="radio" name="ricetta_dest" value="chef" <?php echo $is_pro ? '' : 'disabled'; ?>>
+            <span>Salva in: Ricette dello Chef (Pro)</span>
+            <span class="thub-i" data-tip="Pubblica in Ricette dello Chef, la sezione dedicata ai creatori di ricette pro e monetizza la tua ricetta nel T-Hub market.">i</span>
           </label>
-          <span class="thub-tooltip" aria-label="Visibili solo a te" title="Visibili solo a te">ℹ︎</span>
-        </div>
-
-        <!-- Radio: Ricette dello Chef (Pro) -->
-        <div class="thub-col">
-          <label class="thub-radio">
-            <input type="radio" name="ricetta_visibilita" value="chef">
-            <span>Salva in “Ricette dello Chef” (Pro)</span>
-          </label>
-          <span class="thub-tooltip" aria-label="Pubblicata nel T-Hub market" title="Pubblicata nel T-Hub market">ℹ︎</span>
-        </div>
-
-        <!-- Salva in bozze -->
-        <div class="thub-col">
-          <button type="button" class="thub-btn thub-btn--outline" id="thub_btn_draft">Salva in bozze</button>
-        </div>
-
-        <!-- Pubblica -->
-        <div class="thub-col">
-          <button type="button" class="thub-btn thub-btn--primary" id="thub_btn_publish" <?php disabled( ! $current_user_can_publish ); ?>>Pubblica</button>
+          <?php if(!$is_pro): ?>
+            <p class="thub-help">Questa opzione è riservata agli utenti Pro.</p>
+          <?php endif; ?>
         </div>
       </div>
+    </div>
 
-      <!-- Messaggi -->
+    <!-- ======================= BOX 10 — Azioni (destra, senza box) ======================= -->
+    <div class="thub-actions thub-actions--footer">
       <div id="thub-nr-msg" class="thub-msg" aria-live="polite"></div>
+      <button type="button" id="thub_btn_draft"   class="thub-btn thub-btn--outline">Salva in bozze</button><!-- unico “outline” -->
+      <button type="button" id="thub_btn_publish" class="thub-btn thub-btn--primary">Pubblica</button>
     </div>
   </form>
 
-  <!-- ========== CSS minimo (scoped) per allineare al Canvas esistente ========== -->
   <style>
-    /* [THUB_NR_CSS] Regole minime e non invasive (scoped su .thub-nuova-ricetta) */
-    .thub-nuova-ricetta .thub-title { text-align:center; margin: .2rem 0 0; }
-    .thub-nuova-ricetta .thub-subtitle { text-align:center; color:#666; margin: .25rem 0 1.25rem; }
-    .thub-nuova-ricetta .thub-box { background:#fff; border:1px solid #eee; border-radius:12px; padding:16px; margin:16px 0; }
-    .thub-nuova-ricetta .thub-box--half { max-width:980px; margin-inline:auto; }
-    .thub-nuova-ricetta .thub-grid { display:grid; gap:12px; align-items:start; }
-    .thub-nuova-ricetta .thub-grid--2 { grid-template-columns: 1fr 1fr; }
-    .thub-nuova-ricetta .thub-grid--3 { grid-template-columns: 1.2fr .8fr 1.2fr; }
-    .thub-nuova-ricetta .thub-grid--4 { grid-template-columns: repeat(4, 1fr); }
-    .thub-nuova-ricetta .thub-grid--2xs { grid-template-columns: 1fr 1fr; gap:8px; }
-    .thub-nuova-ricetta .thub-grid--step { grid-template-columns: auto 1fr auto; gap:10px; align-items:center; }
-    .thub-nuova-ricetta .thub-col--center { display:flex; justify-content:center; align-items:center; min-height:240px; }
-    .thub-nuova-ricetta .thub-chef-hat svg { width:160px; height:160px; display:block; }
-    .thub-nuova-ricetta .thub-label { font-weight:600; display:block; margin-bottom:4px; }
-    .thub-nuova-ricetta .thub-input { width:100%; padding:10px 12px; border:1px solid #ddd; border-radius:10px; }
-    .thub-nuova-ricetta .thub-help { color:#888; font-size:.9em; margin:.35rem 0 0; }
-    .thub-nuova-ricetta .thub-box-title { margin:.2rem 0 .75rem; font-weight:700; }
-    .thub-nuova-ricetta .thub-repeater-row { background:#fafafa; border:1px dashed #e3e3e3; padding:10px; border-radius:10px; }
-    .thub-nuova-ricetta .thub-repeater-ctrl { margin-top:10px; }
-    .thub-nuova-ricetta .thub-step-idx { width:34px; height:34px; display:inline-flex; align-items:center; justify-content:center; border-radius:50%; border:1px solid #ddd; background:#fff; font-weight:600; }
-    .thub-nuova-ricetta .thub-btn { padding:10px 14px; border-radius:10px; border:1px solid transparent; cursor:pointer; }
-    .thub-nuova-ricetta .thub-btn--secondary { background:#f5f7ff; border-color:#dfe6ff; }
-    .thub-nuova-ricetta .thub-btn--ghost { background:transparent; border-color:#ddd; }
-    .thub-nuova-ricetta .thub-btn--outline { background:#fff; border-color:#7249a4; color:#7249a4; }
-    .thub-nuova-ricetta .thub-btn--primary { background:#7249a4; color:#fff; }
-    .thub-nuova-ricetta .thub-tooltip { margin-left:6px; cursor:help; color:#999; }
-    .thub-nuova-ricetta .thub-align-center { align-items:center; }
-    .thub-nuova-ricetta .mt { margin-top:10px; }
-    .thub-nuova-ricetta .thub-sr-only { position:absolute; left:-10000px; top:auto; width:1px; height:1px; overflow:hidden; }
-    .thub-nuova-ricetta .thub-msg { margin-top:12px; font-weight:600; }
-    @media (max-width: 920px){
-      .thub-nuova-ricetta .thub-grid--2,
-      .thub-nuova-ricetta .thub-grid--3,
-      .thub-nuova-ricetta .thub-grid--4 { grid-template-columns: 1fr; }
-      .thub-nuova-ricetta .thub-col--center { min-height:160px; }
+    /* ================== STILI IN LINEA CON ACCOUNT ================== */
+    .thub-box{
+      background:#fff;
+      border:1px solid var(--border, #e7e7e7);
+      border-radius:.9rem;
+      padding:16px; margin:16px 0;
+    }
+    .thub-subbox{
+      background:#fff;
+      border:1px solid var(--border, #e7e7e7);
+      border-radius:.9rem;
+      padding:16px;
+    }
+
+    /* [THUB_INPUT_STYLE] input radius .6 + bordo #e6e6ea */
+    .thub-input{
+      width:100%;
+      padding:10px 12px;
+      border:1px solid #e6e6ea;              /* richiesto */
+      border-radius:.6rem;                    /* richiesto */
+      background:#fff;
+    }
+    .thub-input--file{ border:0 !important; padding-left:0 !important; }
+    .thub-input--ro{ border:0 !important; background:#f7f7f9 !important; color:#777; }
+    .thub-input--static{ pointer-events:none; user-select:none; caret-color:transparent; }
+    .thub-input--area{ border:0 !important; background:#fff !important; } /* richiesto */
+
+    .thub-nr__title{ text-align:center; margin:.2rem 0 0; }
+    .thub-nr__subtitle{ text-align:center; color:#666; margin:.25rem 0 1.1rem; }
+    .thub-label{ font-weight:600; margin-bottom:4px; }
+    .thub-help{ color:#888; font-size:.9em; margin:.35rem 0 0; }
+    .thub-spacer{ height:.6rem; }
+    .thub-field .thub-row-helpers{ display:flex; align-items:center; justify-content:space-between; margin-top:.25rem; }
+    .thub-count{ color:#666; font-size:.9em; }
+
+    .thub-grid{ display:grid; gap:12px; align-items:start; }
+    .thub-grid--2{ grid-template-columns:1fr 1fr; }
+    .thub-grid--4{ grid-template-columns:repeat(4, 1fr); }
+    .thub-grid--2xs{ grid-template-columns:1fr 1fr; gap:8px; }
+    .thub-col--center{ display:flex; justify-content:center; align-items:center; min-height:220px; }
+    .thub-chef-hat svg{ width:150px; height:150px; display:block; }
+
+    /* ========== REPEATER ========== */
+    .thub-repeater-ctrl{ margin-top:10px; }
+    .thub-repeater-row{ padding-top:5px; } /* richiesto */
+
+    /* Bottoni (eccetto bozza = outline) */
+    .thub-btn{
+      border:1px solid transparent;
+      border-radius:.6rem;                           /* richiesto */
+      padding:.45rem .8rem;                          /* richiesto */
+      cursor:pointer; width:auto; align-self:flex-start; /* richiesto */
+      transition:background .15s ease, border-color .15s ease, color .15s ease;
+    }
+    .thub-btn--primary, .thub-btn--solid{
+      border:1px solid #7249a4;                      /* richiesto */
+      background:#7249a4; color:#fff;                /* richiesto */
+    }
+    .thub-btn--primary:hover, .thub-btn--solid:hover{
+      background:#7249a4; color:#fff; border-color:#7249a4; /* hover coerente */
+    }
+    .thub-btn--outline{
+      border:1px solid #7249a4; color:#7249a4; background:#fff;
+    }
+    .thub-btn--outline:hover{
+      background:#f7f5fb; color:#7249a4; border-color:#7249a4;
+    }
+    .thub-btn--x{ width:42px; min-width:42px; text-align:center; }
+
+    /* Allineamento colonne repeater:
+       - usiamo minmax per stabilizzare le larghezze (fix safari/overflow) */
+    .thub-ing-row{
+      display:grid;
+      grid-template-columns:
+        minmax(220px, 1.4fr)   /* nome */
+        minmax(120px, .8fr)    /* qta  */
+        minmax(180px, 1fr)     /* unit wrap */
+        42px;                  /* X    */
+      gap:12px; align-items:center;
+    }
+    .thub-ing-unitwrap{ min-width:180px; } /* assicura larghezza coerente */
+    .thub-tool-row{
+      display:grid;
+      grid-template-columns:
+        minmax(220px, 1fr)     /* select */
+        minmax(220px, 1fr)     /* testo  */
+        42px;
+      gap:12px; align-items:center;
+    }
+    .thub-step-row{
+      display:grid;
+      grid-template-columns:
+        auto
+        minmax(280px, 1fr)
+        42px;
+      gap:12px; align-items:center;
+    }
+    .thub-step-idx{
+      width:34px; height:34px; border-radius:50%;
+      border:1px solid var(--border, #e7e7e7);
+      display:inline-grid; place-items:center; background:#fff; font-weight:600;
+    }
+
+    /* Radio & nested */
+    .thub-radio{ display:flex; align-items:center; gap:.5rem; margin:.25rem 0; }
+    .thub-radio.is-disabled{ opacity:.6; }
+    .thub-nested{ margin:.5rem 0 0 1.6rem; display:block; }
+
+    /* Tooltip */
+    .thub-i{ display:inline-grid; place-items:center; width:18px; height:18px; border:1px solid var(--border, #e7e7e7); border-radius:50%; font-size:.8rem; color:#555; cursor:help; position:relative; }
+    .thub-i:hover::after{
+      content: attr(data-tip);
+      position:absolute; left:0; transform: translate(-6px, -120%);
+      background:#111; color:#fff; font-size:.8rem; padding:6px 8px; border-radius:6px; max-width:320px; white-space:normal; z-index:10;
+    }
+
+    /* Azioni a destra, senza box */
+    .thub-actions--footer{ display:flex; gap:10px; align-items:center; justify-content:flex-end; margin:16px 0; }
+    .thub-msg{ margin-right:auto; font-weight:600; }
+
+    @media (max-width: 980px){
+      .thub-grid--2, .thub-grid--4{ grid-template-columns: 1fr; }
+      .thub-col--center{ min-height:160px; }
+      .thub-actions--footer{ justify-content:stretch; }
+      .thub-msg{ margin:0 0 6px 0; order:-1; }
+    }
+
+
+    /*Sovrascritto*/
+    /* === INPUT: bordo e radius in linea con account === */
+    .thub-input{
+      width:100%;
+      padding:10px 12px;
+      border:1px solid #e6e6ea;      /* baseline */
+      border-radius:.6rem;            /* baseline */
+      background:#fff;
+      min-width:0;                    /* evita overflow in grid/flex */
+    }
+    /* richiesta specifica: per i text usa #e1e1e6 */
+    .thub-input[type="text"]{ border-color:#e1e1e6; }
+
+    /* Porzioni base “non cliccabile” già ok; confermo */
+    .thub-input--ro{ border:0 !important; background:#f7f7f9 !important; color:#777; }
+    .thub-input--static{ pointer-events:none; user-select:none; caret-color:transparent; }
+
+    /* Textarea note: senza bordo e bg bianco (richiesto) */
+    .thub-input--area{ border:0 !important; background:#fff !important; }
+
+    /* === BOTTONI === */
+    /* Base (anche per +Aggiungi) */
+    .thub-btn{
+      border:1px solid transparent;
+      border-radius:.6rem;
+      padding:.45rem .8rem;
+      cursor:pointer;
+      width:auto; align-self:flex-start;
+      transition:background .15s ease, border-color .15s ease, color .15s ease;
+    }
+    /* Solido (per Pubblica e i 3 +Aggiungi) */
+    .thub-btn--primary{
+      border:1px solid #7249a4;
+      background:#7249a4;
+      color:#fff;
+    }
+    .thub-btn--primary:hover{ background:#7249a4; color:#fff; border-color:#7249a4; }
+
+    /* Outline (solo “Salva in bozze”) */
+    .thub-btn--outline{ border:1px solid #7249a4; color:#7249a4; background:#fff; }
+    .thub-btn--outline:hover{ background:#f7f5fb; color:#7249a4; border-color:#7249a4; }
+
+    /* X dei repeater: eccezione (leggera, NON solida) */
+    .thub-btn--x{
+      border:1px solid #e6e6ea;      /* guscio leggero */
+      background:#fff;
+      color:#7249a4;
+      width:42px; min-width:42px; text-align:center;
+    }
+    .thub-btn--x:hover{ background:#f7f5fb; color:#7249a4; border-color:#e6e6ea; }
+
+    /* Focus uniforme su tutti i bottoni */
+    .thub-btn:focus-visible{ outline:2px solid #7249a4; outline-offset:2px; }
+
+    /* === REPEATER: padding top riga e allineamenti === */
+    .thub-repeater-row{ padding-top:5px; }
+
+    /* Fix: nascondi “Specifica” di default per evitare ricalcoli tra righe */
+    .thub-unit-other{ display:none; }
+
+    /* IMPORTANTISSIMO: prevenire overflow che altera i calcoli delle colonne */
+    .thub-ing-row > *, .thub-tool-row > *, .thub-step-row > * { min-width:0; }
+
+    /* INGREDIENTI — alternativa stabile in % (allinea anche le righe clonate)  */
+    .thub-ing-row{
+      display:grid;
+      grid-template-columns: 44% 18% 38% 42px;  /* nome | qta | unit-wrap | X */
+      gap:12px; align-items:center;
+    }
+    .thub-ing-unitwrap{ display:grid; grid-template-columns: 1fr 1fr; gap:8px; min-width:0; }
+
+    /* ATTREZZATURE — 50% | 50% | X */
+    .thub-tool-row{
+      display:grid;
+      grid-template-columns: 1fr 1fr 42px;
+      gap:12px; align-items:center;
+    }
+
+    /* PASSAGGI — # | testo | X */
+    .thub-step-row{
+      display:grid;
+      grid-template-columns: auto 1fr 42px;
+      gap:12px; align-items:center;
     }
   </style>
 
-  <!-- ========== JS: Repeater + Submit AJAX ========== -->
   <script>
-  // [THUB_NR_JS] — Vanilla JS, no deps. Gestisce repeater e submit AJAX.
   (function(){
-    const form = document.getElementById('thub-nr-form');
-    const msg  = document.getElementById('thub-nr-msg');
-    const ajaxurl = form?.dataset?.ajaxurl || '<?php echo esc_js($ajaxurl); ?>';
-    const nonce   = form?.dataset?.nonce || '<?php echo esc_js($thub_nr_nonce); ?>';
+    const form   = document.getElementById('thub-nr-form');
+    const ajax   = form?.dataset?.ajaxurl || '';
+    const nonce  = form?.dataset?.nonce || '';
+    const isPro  = form?.dataset?.isPro === '1';
+    const msg    = document.getElementById('thub-nr-msg');
 
-    // ===== Repeater Ingredienti =====
+    const $  = (s,c=document)=>c.querySelector(s);
+    const $$ = (s,c=document)=>Array.from(c.querySelectorAll(s));
+
+    /* ---- Contatori caratteri ---- */
+    function bindCounter(id){
+      const el = document.getElementById(id); if(!el) return;
+      const cnt = document.querySelector('.thub-count[data-for="'+id+'"]');
+      const rec = parseInt(cnt?.dataset?.rec || '0', 10) || 0;
+      const upd = ()=>{ if(cnt) cnt.textContent = (el.value.length)+'/'+rec; };
+      el.addEventListener('input', upd); upd();
+    }
+    bindCounter('thub_title'); bindCounter('thub_intro');
+
+    /* ---- Ingredienti repeater ---- */
     const ingWrap = document.getElementById('thub-ing-repeater');
-    const ingAdd  = document.getElementById('thub-ing-add');
     const ingTpl  = document.getElementById('tpl-ing-row').innerHTML;
-
-    ingAdd?.addEventListener('click', function(){
-      const i = parseInt(ingWrap.getAttribute('data-next-index') || '1', 10);
+    $('#thub-ing-add')?.addEventListener('click', ()=>{
+      const i = parseInt(ingWrap.getAttribute('data-next-index')||'1',10);
       const html = ingTpl.replaceAll('__i__', String(i));
       const div = document.createElement('div');
-      div.className = 'thub-grid thub-grid--3 thub-repeater-row';
+      div.className = 'thub-repeater-row thub-ing-row';
       div.innerHTML = html;
       ingWrap.insertBefore(div, ingWrap.querySelector('.thub-repeater-ctrl'));
       ingWrap.setAttribute('data-next-index', String(i+1));
     });
-
-    ingWrap?.addEventListener('click', function(e){
+    ingWrap?.addEventListener('click', (e)=>{
       if(e.target.closest('.thub-repeater-remove')){
-        const row = e.target.closest('.thub-repeater-row');
-        row?.remove();
+        e.target.closest('.thub-repeater-row')?.remove();
+      }
+    });
+    ingWrap?.addEventListener('change', (e)=>{
+      const sel = e.target.closest('select.thub-unit'); if(!sel) return;
+      const wrap = sel.closest('.thub-ing-unitwrap');
+      const other = wrap?.querySelector('.thub-unit-other');
+      const isAltro = (sel.value||'').toLowerCase()==='altro';
+      if(other){ other.style.display = isAltro ? 'block' : 'none'; if(!isAltro) other.value=''; }
+    });
+    $$('select.thub-unit', ingWrap).forEach(sel=>{
+      const wrap = sel.closest('.thub-ing-unitwrap');
+      const other = wrap?.querySelector('.thub-unit-other');
+      if(other) other.style.display = ((sel.value||'').toLowerCase()==='altro') ? 'block':'none';
+    });
+
+    /* ---- Attrezzature repeater ---- */
+    const toolWrap = document.getElementById('thub-tool-repeater');
+    const toolTpl  = document.getElementById('tpl-tool-row').innerHTML;
+    $('#thub-tool-add')?.addEventListener('click', ()=>{
+      const i = parseInt(toolWrap.getAttribute('data-next-index')||'1',10);
+      const html = toolTpl.replaceAll('__i__', String(i));
+      const div = document.createElement('div');
+      div.className = 'thub-repeater-row thub-tool-row';
+      div.innerHTML = html;
+      toolWrap.insertBefore(div, toolWrap.querySelector('.thub-repeater-ctrl'));
+      toolWrap.setAttribute('data-next-index', String(i+1));
+    });
+    toolWrap?.addEventListener('click', (e)=>{
+      if(e.target.closest('.thub-repeater-remove')){
+        e.target.closest('.thub-repeater-row')?.remove();
       }
     });
 
-    // ===== Repeater Passaggi =====
+    /* ---- Passaggi repeater ---- */
     const stWrap = document.getElementById('thub-steps-repeater');
-    const stAdd  = document.getElementById('thub-step-add');
     const stTpl  = document.getElementById('tpl-step-row').innerHTML;
-
-    stAdd?.addEventListener('click', function(){
-      const i = parseInt(stWrap.getAttribute('data-next-index') || '2', 10);
+    $('#thub-step-add')?.addEventListener('click', ()=>{
+      const i = parseInt(stWrap.getAttribute('data-next-index')||'2',10);
       const html = stTpl.replaceAll('__i__', String(i));
       const div = document.createElement('div');
-      div.className = 'thub-repeater-row thub-grid thub-grid--1';
+      div.className = 'thub-repeater-row thub-step-row';
       div.innerHTML = html;
       stWrap.insertBefore(div, stWrap.querySelector('.thub-repeater-ctrl'));
       stWrap.setAttribute('data-next-index', String(i+1));
+      $$('.thub-step-idx', stWrap).forEach((el,idx)=> el.textContent = '#'+(idx+1));
     });
-
-    stWrap?.addEventListener('click', function(e){
+    stWrap?.addEventListener('click', (e)=>{
       if(e.target.closest('.thub-repeater-remove')){
-        const row = e.target.closest('.thub-repeater-row');
-        row?.remove();
-        // Re-index visuale (#n)
-        Array.from(stWrap.querySelectorAll('.thub-step-idx .n')).forEach((el, idx) => el.textContent = String(idx+1));
+        e.target.closest('.thub-repeater-row')?.remove();
+        $$('.thub-step-idx', stWrap).forEach((el,idx)=> el.textContent = '#'+(idx+1));
       }
     });
 
-    // ===== Bottoni submit (bozza/pubblica) =====
-    document.getElementById('thub_btn_draft')?.addEventListener('click', () => submitForm('draft'));
-    document.getElementById('thub_btn_publish')?.addEventListener('click', () => submitForm('publish'));
+    /* ---- Toggle Nonna ---- */
+    form.addEventListener('change', (e)=>{
+      if(e.target.name==='ricetta_dest'){
+        const box = document.getElementById('thub-nonna-sub');
+        box.style.display = (e.target.value==='nonna') ? 'block' : 'none';
+      }
+    });
 
-    function submitForm(type){
-      if(!form) return;
-      document.getElementById('thub_submit_type').value = type === 'publish' ? 'publish' : 'draft';
+    /* ---- Validazione client ---- */
+    function validate(){
+      let ok = true, errs = [];
+      const req = (sel,label)=>{
+        const el = $(sel); if(!el) return;
+        const v = (el.value||'').trim();
+        if(!v){ el.classList.add('is-error'); ok=false; errs.push(label+' mancante'); }
+        else   el.classList.remove('is-error');
+      };
+      req('#thub_title','Titolo');
+      req('#thub_intro','Descrizione');
+      req('input[name="tempo_di_preparazione"]','Tempo di preparazione');
+      req('input[name="tempo_di_cottura"]','Tempo di cottura');
 
-      msg.textContent = 'Salvataggio in corso...';
-      msg.style.color = '#444';
+      const fi = $('input[name="thub_recipe_image"]');
+      if(fi && !(fi.files && fi.files.length>0)){ ok=false; errs.push('Immagine della ricetta mancante'); fi.classList.add('is-error'); }
+      else if(fi){ fi.classList.remove('is-error'); }
 
-      const formData = new FormData(form);
-      formData.set('thub_nr_nonce', nonce);
-      formData.set('action', 'thub_save_user_recipe');
+      const ingRows = $$('.thub-ing-row');
+      const ingFilled = ingRows.filter(r=> (r.querySelector('input[name*="[nome]"]')?.value||'').trim() !== '');
+      if(ingFilled.length < 1){ ok=false; errs.push('Inserisci almeno 1 ingrediente'); }
 
-      fetch(ajaxurl, {
-        method: 'POST',
-        credentials: 'same-origin',
-        body: formData
-      })
-      .then(r => r.json())
-      .then(json => {
-        if(json?.success){
-          msg.textContent = json.message || 'Salvato con successo.';
-          msg.style.color = '#2a7a2a';
-          if(json.redirect){
-            window.location.href = json.redirect;
-          }
+      const toolRows = $$('.thub-tool-row');
+      const toolFilled = toolRows.filter(r=> (r.querySelector('select[name*="[key]"]')?.value||'') !== '');
+      if(toolFilled.length < 1){ ok=false; errs.push('Inserisci almeno 1 attrezzatura'); }
+
+      const stepRows = $$('.thub-step-row');
+      const stepFilled = stepRows.filter(r=> (r.querySelector('input[name^="passaggi"]')?.value||'').trim() !== '');
+      if(stepFilled.length < 3){ ok=false; errs.push('Inserisci almeno 3 passaggi'); }
+
+      if(!ok){ msg.textContent = errs.join(' • '); msg.style.color = '#a33'; }
+      return ok;
+    }
+
+    /* ---- Submit ---- */
+    $('#thub_btn_draft')?.addEventListener('click', ()=> submit('draft'));
+    $('#thub_btn_publish')?.addEventListener('click', ()=> submit('publish'));
+
+    function submit(type){
+      if(!validate()) return;
+
+      $('#thub_submit_type').value = (type==='publish') ? 'publish' : 'draft';
+      msg.textContent = 'Salvataggio in corso...'; msg.style.color = '#444';
+
+      const fd = new FormData(form);
+      fd.set('thub_nr_nonce', nonce);
+      fd.set('action', 'thub_save_user_recipe');
+
+      if(!isPro && fd.get('ricetta_dest')==='chef'){ fd.set('ricetta_dest', 'nonna'); }
+
+      fetch(ajax, { method:'POST', credentials:'same-origin', body:fd })
+      .then(r=>r.json())
+      .then(j=>{
+        if(j?.success){
+          msg.textContent = j.message || 'Salvato con successo.'; msg.style.color = '#2a7a2a';
+          if(j.redirect){ window.location.href = j.redirect; }
         } else {
-          msg.textContent = json?.message || 'Si è verificato un errore.';
-          msg.style.color = '#a33';
+          msg.textContent = j?.message || 'Si è verificato un errore.'; msg.style.color = '#a33';
         }
       })
-      .catch(() => {
-        msg.textContent = 'Errore di rete. Riprova.';
-        msg.style.color = '#a33';
-      });
+      .catch(()=>{ msg.textContent = 'Errore di rete.'; msg.style.color = '#a33'; });
     }
   })();
   </script>

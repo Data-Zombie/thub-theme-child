@@ -27,10 +27,13 @@ get_header();
     /* --- [THUB_META] Meta tempi/porzioni/kcal --- */
     $prep  = function_exists('get_field') ? (string) get_field('tempo_di_preparazione') : '';
     $cook  = function_exists('get_field') ? (string) get_field('tempo_di_cottura')     : '';
-
-    // Porzioni di base: usa 'porzioni_base' (nuovo), fallback 'porzioni' (legacy), default 1
-    $porz_base = (int) ( (function_exists('get_field') ? get_field('porzioni_base') : null)
-                  ?: (function_exists('get_field') ? get_field('porzioni') : 1) ?: 1 );
+    
+    // Porzioni di base (solo CANONICO): 'porzioni_base' (default 1)
+    $porz_base = (int) ( function_exists('get_field')
+      ? ( get_field('porzioni_base') ?: 1 )
+      : ( get_post_meta($post_id, 'porzioni_base', true) ?: 1 )
+    );
+    $porz_base = max(1, $porz_base);
 
     // Kcal per porzione (per UI dinamica)
     $kcal_porz = (float) (function_exists('get_field') ? (get_field('kcal_per_porz') ?: 0) : 0);
@@ -125,7 +128,7 @@ get_header();
            - #thub-porzioni-label (nel blocco meta sopra, aggiornato dallo script)
            - #thub-porz-dyn → già stampato nel partial ingredienti come contatore dinamico
            - #thub-kcal-porz / #thub-kcal-tot gestiti dal JS
-           Riferimento selettori JS: thub-recipe.js (porzioni/kcal) :contentReference[oaicite:1]{index=1}
+            Riferimento selettori JS: thub-recipe.js (porzioni/kcal)
         */
         ?>
         <div class="thub-porzioni-ui"
@@ -146,90 +149,75 @@ get_header();
       <?php
       /* [THUB_INGREDIENTI_NEW] Ingredienti dal partial (repeater + data-*) — scala con JS
          Il partial stampa: <ul id="thub-ingredienti-list"> con <li class="thub-ing" data-base-qta …>
-         Richiesto dal JS per l’update delle quantità. :contentReference[oaicite:2]{index=2} */
+         Richiesto dal JS per l’update delle quantità. */
       get_template_part('parts/ricetta/ingredienti');
       ?>
 
       <?php
       /* ============================================================
         [THUB_TTS_TEXT_BLOCK] — Testo invisibile “pulito” per TTS
+        Versione CANONICO-ONLY:
+        - Ingredienti da ingredienti_rep (repeater)
+        - Passaggi   da passaggi_rep    (repeater)
+        - Nessun uso di campi legacy (ingredienti/passaggi textarea)
+        - Requisiti JS: esistenza di [data-ricetta-tts] (thub-recipe.js) [THUB_TTS_USE_HELPERS_CANONICO]
         ============================================================ */
       if ( $__tts_on ) :
         $titolo = get_the_title();
+        $post_id = get_the_ID();
 
-        // Ingredienti (stringa o repeater ACF)
-        $ing = function_exists('get_field') ? get_field('ingredienti') : '';
-        if ( is_array($ing) ){
-          $ing_list = array();
-          foreach($ing as $row){
-            $val = is_array($row) ? ($row['ingrediente'] ?? $row['nome'] ?? $row['testo'] ?? '') : $row;
-            $val = wp_strip_all_tags( (string)$val );
-            if($val!=='') $ing_list[] = $val;
+        /* --- Ingredienti: ingredienti_rep → stringa unica --- */
+        $ingredienti_txt = '';
+        if ( function_exists('get_field') ) {
+          $ing_rows = (array) get_field('ingredienti_rep', $post_id); // repeater canonico
+          if ($ing_rows) {
+            $buf = [];
+            foreach ($ing_rows as $r) {
+              $nome = trim((string)($r['ing_nome'] ?? ''));
+              $qta  = trim((string)($r['ing_qta']  ?? ''));
+              $unit = trim((string)($r['ing_unita'] ?? ''));
+              if (strcasecmp($unit, 'altro') === 0) {
+                $unit = trim((string)($r['ing_unita_altro'] ?? ''));
+              }
+              // Costruisco “qta unita nome” (senza doppi spazi)
+              $line = trim(implode(' ', array_filter([$qta, $unit, $nome])));
+              if ($line !== '') $buf[] = $line;
+            }
+            if ($buf) $ingredienti_txt = implode(', ', $buf);
           }
-          $ingredienti_txt = implode(", ", $ing_list);
-        } else {
-          $ingredienti_txt = wp_strip_all_tags( (string)$ing );
         }
 
-        // Passaggi (stringa o repeater ACF)
-        $pas = function_exists('get_field') ? get_field('passaggi') : '';
-        if ( is_array($pas) ){
-          $pas_list = array();
-          foreach($pas as $i => $row){
-            $val = is_array($row) ? ($row['passaggio'] ?? $row['testo'] ?? '') : $row;
-            $val = wp_strip_all_tags( (string)$val );
-            if($val!=='') $pas_list[] = ($i+1) . ". " . $val;
-          }
-          $passaggi_txt = implode(" ", $pas_list);
-        } else {
-          $tmp = preg_split('/\r\n|\r|\n/', (string)$pas);
-          $tmp = array_map('wp_strip_all_tags', array_filter((array)$tmp));
-          if (!empty($tmp)){
-            $X = array();
-            foreach($tmp as $i => $r){ $X[] = ($i+1).". ".$r; }
-            $passaggi_txt = implode(" ", $X);
-          } else {
-            $passaggi_txt = '';
+        /* --- Passaggi: passaggi_rep → "1. step 2. step ..." --- */
+        $passaggi_txt = '';
+        if ( function_exists('get_field') ) {
+          $pas_rows = (array) get_field('passaggi_rep', $post_id); // repeater canonico
+          if ($pas_rows) {
+            $i = 0; $buf = [];
+            foreach ($pas_rows as $r) {
+              $t = trim((string)($r['passo_testo'] ?? ''));
+              if ($t !== '') $buf[] = (++$i).'. '.wp_strip_all_tags($t);
+            }
+            if ($buf) $passaggi_txt = implode(' ', $buf);
           }
         }
         ?>
+        <!-- [THUB_TTS_STYLE_FIX] wrapper invisibile (richiesto da thub-recipe.js) -->
         <div data-ricetta-tts class="screen-reader-only" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;">
           <?php
             $tts_full = trim(
-              $titolo . ". " .
-              ( $ingredienti_txt ? ("Ingredienti: " . $ingredienti_txt . ". ") : "" ) .
-              ( $passaggi_txt    ? ("Passaggi: "    . $passaggi_txt )        : "" )
+              $titolo . '. ' .
+              ( $ingredienti_txt ? ('Ingredienti: ' . $ingredienti_txt . '. ') : '' ) .
+              ( $passaggi_txt    ? ('Passaggi: '    . $passaggi_txt          ) : '' )
             );
             echo esc_html( $tts_full );
           ?>
         </div>
       <?php endif; ?>
 
-      <section class="passaggi"><!-- [THUB_PASSAGGI] Gating step -->
-        <h2>Preparazione</h2>
-        <?php
-          // Compat: campo passaggi come testo multilinea (se non stai ancora usando il repeater)
-          $steps_raw = trim((string) (function_exists('get_field') ? get_field('passaggi') : ''));
-          if ($steps_raw) {
-            $rows  = array_values(array_filter(preg_split("/\r\n|\r|\n/", $steps_raw), fn($x)=>$x!==''));
-            $total = count($rows);
-            $show  = $is_pro ? $total : min($limit_steps, $total);
-
-            echo '<ol>';
-            for ($i=0; $i<$show; $i++) {
-              echo '<li>'.esc_html($rows[$i]).'</li>';
-            }
-            echo '</ol>';
-
-            if (!$is_pro && $total > $limit_steps) {
-              // [THUB_CTA_PRO]
-              echo '<div class="thub-cta-pro" role="note"><p><strong>Iscriviti a Pro</strong> per sbloccare tutti gli step, video e stampa.</p><a class="thub-btn thub-btn--pro" href="/abbonati" rel="nofollow">Attiva Pro</a></div>';
-            }
-          } else {
-            echo '<p>Nessun passaggio indicato.</p>';
-          }
-        ?>
-      </section>
+      <?php
+      /* [THUB_PASSAGGI_INCLUDE] Preparazione: partial canonico con repeater 'passaggi_rep' */
+      get_template_part('parts/ricetta/passaggi');
+      ?>
 
       <?php
       /* [THUB_VARIANTI] Carousel varianti via partial dedicato (scroll-snap + frecce) */
@@ -255,7 +243,9 @@ get_header();
             }
           }
           echo '<div class="att-item">';
-          echo   '<div class="att-icon">'.($svg_inline ?: '').'</div>';
+          // [THUB_ATTREZZATURE_ICON_FALLBACK] prepara HTML icona: prima prova SVG custom, altrimenti fallback predefinito
+          $icon_html = $svg_inline ?: ( function_exists('thub_icon_svg') && !empty($k) ? thub_icon_svg($k) : '' );
+          echo '<div class="att-icon">'.$icon_html.'</div>';
           echo   '<div class="att-text">'.esc_html($label).'</div>';
           echo '</div>';
         }

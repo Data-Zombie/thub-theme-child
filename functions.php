@@ -127,92 +127,6 @@ if (!function_exists('thub_iso_duration_from_minutes')) {
   }
 }
 
-if (!function_exists('thub_build_recipe_jsonld')) {
-  function thub_build_recipe_jsonld($post_id){
-    // Prendi ACF se presente, altrimenti meta standard
-    $getmeta = function($key) use ($post_id){
-      if (function_exists('get_field')) return (string) get_field($key, $post_id);
-      return (string) get_post_meta($post_id, $key, true);
-    };
-
-    $title = get_the_title($post_id);
-    $img   = get_the_post_thumbnail_url($post_id, 'full');
-    $prep  = $getmeta('tempo_di_preparazione');
-    $cook  = $getmeta('tempo_di_cottura');
-    // [THUB_JSONLD] Yield: preferisci 'porzioni_base', fallback al legacy 'porzioni'
-    $yield = $getmeta('porzioni_base') ?: $getmeta('porzioni');
-    $ing   = $getmeta('ingredienti');
-    $steps = $getmeta('passaggi');
-
-    // Ingredienti e istruzioni (una riga = un elemento)
-    $ingredients = array_values(array_filter(array_map('trim', preg_split("/\r\n|\r|\n/", (string)$ing))));
-    $instructions = [];
-    foreach (array_values(array_filter(array_map('trim', preg_split("/\r\n|\r|\n/", (string)$steps)))) as $s) {
-      $instructions[] = ['@type'=>'HowToStep', 'text'=>$s];
-    }
-
-    // Tempi
-    $prepMin  = thub_minutes_from_text($prep);
-    $cookMin  = thub_minutes_from_text($cook);
-    $totalMin = $prepMin + $cookMin;
-
-    // Tassonomie e autore
-    $cats   = wp_get_post_terms($post_id, 'category', ['fields'=>'names']);
-    $tags   = wp_get_post_terms($post_id, 'post_tag', ['fields'=>'names']);
-    $author = ['@type'=>'Person','name'=> get_the_author_meta('display_name', get_post_field('post_author',$post_id))];
-    // Se preferisci autore come brand del sito: usa la riga seguente e commenta quella sopra
-    // $author = ['@type'=>'Organization','name'=> get_bloginfo('name')];
-
-    // Descrizione di fallback
-    $desc = get_the_excerpt($post_id);
-    if (!$desc) $desc = wp_trim_words(wp_strip_all_tags(get_post_field('post_content', $post_id)), 40);
-
-    $url = get_permalink($post_id);
-
-    /* [THUB_JSONLD_EXT] Preleva tassonomie e campi extra */
-    $cucina = wp_get_post_terms($post_id, 'cucina', ['fields'=>'names']);
-    $portata= wp_get_post_terms($post_id, 'portata',['fields'=>'names']);
-    $dieta  = wp_get_post_terms($post_id, 'dieta',  ['fields'=>'names']);
-    $kcal   = function_exists('get_field') ? (string) get_field('kcal_per_porz', $post_id) : '';
-    $video  = function_exists('get_field') ? (string) get_field('video_url',      $post_id) : '';
-
-    return [
-      '@context'           => 'https://schema.org',
-      '@type'              => 'Recipe',
-      '@id'                => $url . '#recipe',
-      'mainEntityOfPage'   => $url,
-      'name'               => $title,
-      'description'        => $desc,
-      'image'              => $img ? [$img] : [],
-      'datePublished'      => get_the_date('c', $post_id),
-      'dateModified'       => get_the_modified_date('c', $post_id),
-      'author'             => $author,
-      'recipeCuisine'      => $cucina ? $cucina[0] : null,
-      'recipeCategory'     => $portata ? $portata[0] : null,
-      'suitableForDiet'    => $dieta ?: null,
-      'recipeYield'        => $yield ?: null,
-      'prepTime'           => thub_iso_duration_from_minutes($prepMin),
-      'cookTime'           => thub_iso_duration_from_minutes($cookMin),
-      'totalTime'          => thub_iso_duration_from_minutes($totalMin),
-      'recipeIngredient'   => $ingredients,
-      'recipeInstructions' => $instructions,
-      'keywords'           => implode(', ', $tags),
-      'nutrition'          => $kcal ? ['@type'=>'NutritionInformation','calories'=>$kcal.' kcal'] : null,
-      'video'              => $video ? ['@type'=>'VideoObject','url'=>$video] : null,
-    ];
-  }
-}
-
-if (!function_exists('thub_echo_recipe_jsonld')) {
-  function thub_echo_recipe_jsonld(){
-    if (!is_singular('ricetta')) return;
-    $data = thub_build_recipe_jsonld(get_the_ID());
-    echo '<script type="application/ld+json">'.wp_json_encode($data, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE).'</script>' . "\n";
-  }
-}
-// Stampa SOLO nell'head
-add_action('wp_head', 'thub_echo_recipe_jsonld', 25);
-
 // ─────────────────────────────────────────────────────────────
 // THUB: size per loghi sponsor (quadrata, crop)
 // ─────────────────────────────────────────────────────────────
@@ -453,63 +367,241 @@ add_action('wp_head', function(){
   echo '<meta name="description" content="'.esc_attr($intro_150).'">'."\n";
 }, 5);
 
+/* ============================================================
+ * [THUB_JSONLD_HELPERS] — Preferisci campi strutturati; fallback ai legacy
+ * ============================================================ */
+
+/* Converte “45”, “1h 30m”, “90 min” → ISO8601 (PT...) */
+if (!function_exists('thub_to_iso8601_duration')) {
+  function thub_to_iso8601_duration($val){
+    $s = trim((string)$val);
+    if ($s === '') return null;
+    $n = mb_strtolower($s, 'UTF-8');
+    preg_match('/(\d+)\s*h/', $n, $mh);
+    preg_match('/(\d+)\s*m/', $n, $mm);
+    $h = isset($mh[1]) ? intval($mh[1]) : 0;
+    $m = isset($mm[1]) ? intval($mm[1]) : 0;
+    if ($h === 0 && $m === 0 && preg_match('/^\d+$/', $n)) $m = intval($n);
+    if ($h === 0 && $m === 0) return null;
+    $iso = 'PT';
+    if ($h > 0) $iso .= $h.'H';
+    if ($m > 0) $iso .= $m.'M';
+    return $iso;
+  }
+}
+
 /* ===========================
- * [THUB_SPONSOR_RESOLVER] Supporta campi unificati e legacy "Sponsor Ricetta (CPM)" 
+ * [THUB_JSONLD_CANONICO_ONLY]
+ * Ingredienti/Passaggi: SOLO campi strutturati (ingredienti_rep / passaggi_rep)
+ * Nessun fallback ai legacy.
  * =========================== */
+
+if (!function_exists('thub_jsonld_ingredients')) {
+  function thub_jsonld_ingredients($post_id){
+    $out = [];
+    if (function_exists('get_field')) {
+      $rows = (array) get_field('ingredienti_rep', $post_id);
+      foreach ($rows as $r) {
+        $nome = trim((string)($r['ing_nome'] ?? ''));
+        $qta  = trim((string)($r['ing_qta']  ?? ''));
+        $unit = trim((string)($r['ing_unita'] ?? ''));
+        if ($unit === 'Altro') {
+          $unit = trim((string)($r['ing_unita_altro'] ?? ''));
+        }
+        $line = trim(implode(' ', array_filter([$qta, $unit, $nome])));
+        if ($line !== '') $out[] = $line;
+      }
+    }
+    return $out;
+  }
+}
+
+if (!function_exists('thub_jsonld_steps')) {
+  function thub_jsonld_steps($post_id){
+    $steps = [];
+    if (function_exists('get_field')) {
+      $rows = (array) get_field('passaggi_rep', $post_id);
+      foreach ($rows as $r) {
+        $t = trim((string)($r['passo_testo'] ?? ''));
+        if ($t !== '') $steps[] = $t;
+      }
+    }
+    return $steps;
+  }
+}
+
+/* ============================================================
+ * [THUB_JSONLD] — Output JSON-LD Recipe in <head>
+ * ============================================================ */
+if (!function_exists('thub_output_recipe_jsonld')) {
+  function thub_output_recipe_jsonld(){
+    if (!is_singular('ricetta') || is_feed()) return;
+
+    $id    = get_the_ID();
+    $url   = get_permalink($id);
+    $title = wp_strip_all_tags(get_the_title($id));
+
+    // Descrizione: preferisci intro_breve → excerpt
+    $desc = '';
+    if (function_exists('get_field')) $desc = (string) get_field('intro_breve', $id);
+    if ($desc === '') $desc = has_excerpt($id) ? get_the_excerpt($id) : '';
+    $desc = wp_html_excerpt(wp_strip_all_tags($desc), 300, '…');
+
+    $img    = get_the_post_thumbnail_url($id, 'full');
+    $images = $img ? [$img] : [];
+
+    // Porzioni & Kcal
+    $porz = (string) ( function_exists('get_field') ? get_field('porzioni_base', $id) : get_post_meta($id, 'porzioni_base', true) );
+    $kcal = (string) ( function_exists('get_field') ? get_field('kcal_per_porz', $id) : get_post_meta($id, 'kcal_per_porz', true) );
+
+    // Tempi → ISO8601
+    $tp = (string) ( function_exists('get_field') ? get_field('tempo_di_preparazione', $id) : get_post_meta($id, 'tempo_di_preparazione', true) );
+    $tc = (string) ( function_exists('get_field') ? get_field('tempo_di_cottura',      $id) : get_post_meta($id, 'tempo_di_cottura',      true) );
+    $tprep = thub_to_iso8601_duration($tp);
+    $tcook = thub_to_iso8601_duration($tc);
+
+    // Ingredienti / Istruzioni
+    $ingredients  = thub_jsonld_ingredients($id);
+    $instructions = thub_jsonld_steps($id);
+
+    // Tassonomie utili
+    $cats_portata = wp_get_post_terms($id, 'portata', ['fields'=>'names']);
+    $cats_cucina  = wp_get_post_terms($id, 'cucina',  ['fields'=>'names']);
+    $cats_dieta   = wp_get_post_terms($id, 'dieta',   ['fields'=>'names']);
+    $tags         = wp_get_post_terms($id, 'post_tag',['fields'=>'names']);
+
+    // Autore
+    $author_name = get_the_author_meta('display_name', get_post_field('post_author', $id));
+
+    $data = [
+      '@context'           => 'https://schema.org',
+      '@type'              => 'Recipe',
+      'mainEntityOfPage'   => $url,
+      'name'               => $title,
+      'description'        => $desc,
+      'image'              => $images,
+      'author'             => [ '@type' => 'Person', 'name' => $author_name ],
+      'datePublished'      => get_the_date('c', $id),
+      'dateModified'       => get_the_modified_date('c', $id),
+      'keywords'           => implode(', ', array_filter(array_merge($tags, $cats_dieta))),
+      'recipeIngredient'   => $ingredients,
+      'recipeInstructions' => array_map(fn($t)=>['@type'=>'HowToStep','text'=>$t], $instructions),
+      'recipeCategory'     => $cats_portata ? implode(', ', $cats_portata) : null,
+      'recipeCuisine'      => $cats_cucina  ? $cats_cucina[0] : null,
+      'url'                => $url,
+    ];
+    if ($porz !== '') $data['recipeYield'] = $porz;
+    if ($tprep)        $data['prepTime']   = $tprep;
+    if ($tcook)        $data['cookTime']   = $tcook;
+    if ($kcal !== '') {
+      $data['nutrition'] = [
+        '@type'    => 'NutritionInformation',
+        'calories' => trim($kcal).' kcal per porzione',
+      ];
+    }
+
+    foreach ($data as $k => $v) {
+      if ($v === null || $v === [] || $v === '') unset($data[$k]);
+    }
+
+    echo "\n".'<!-- [THUB_JSONLD] Recipe schema -->'."\n";
+    echo '<script type="application/ld+json">'
+         . wp_json_encode($data, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT)
+         . '</script>'."\n";
+  }
+  add_action('wp_head', 'thub_output_recipe_jsonld', 30);
+}
+
+/* ============================================================
+ * [THUB_SPONSOR_RESOLVER_CANONICO_ONLY]
+ * Resolver sponsor “canonico-only”
+ * - 1) Post-level: Sponsor (unificato) → se attivo, ritorna subito
+ * - 2) Category-level: Opzioni “Sponsor per categoria” → mappa per term
+ * - 3) Nessun fallback legacy (sponsor_cpm_*)
+ * Ritorna array ['nome','logo','url','claim','type'] oppure null
+ * ============================================================ */
+if ( ! function_exists('thub_get_sponsor_data') ) :
 function thub_get_sponsor_data($post_id){
-  if (!function_exists('get_field')) return null;
+  // 1) Post-level (Sponsor unificato)
+  if ( function_exists('get_field') ) {
+    $attivo = (int) get_field('sponsor_attivo', $post_id);
+    if ( $attivo ) {
+      $nome  = (string) get_field('sponsor_nome', $post_id);
+      $logo  =        get_field('sponsor_logo', $post_id); // può essere ID o URL
+      $url   = (string) get_field('sponsor_url',  $post_id);
+      $claim = (string) get_field('sponsor_claim',$post_id);
 
-  // 1) Campi unificati (nuovi)
-  $attivo = get_field('sponsor_attivo', $post_id);
-  $nome   = get_field('sponsor_nome',   $post_id);
-  $logo   = get_field('sponsor_logo',   $post_id); // ID allegato
-  $url    = get_field('sponsor_url',    $post_id);
-  $claim  = get_field('sponsor_claim',  $post_id);
-
-  if ($attivo && ($nome || $logo || $url)) {
-    return [
-      'nome'  => $nome ?: '',
-      'logo'  => $logo ?: 0,
-      'url'   => $url  ?: '',
-      'claim' => $claim ?: '«%s» consiglia questa ricetta',
-      'scope' => 'post'
-    ];
-  }
-
-  // 2) Legacy (gruppo "Sponsor Ricetta (CPM)")
-  $cpm_enabled = get_field('sponsor_cpm_enabled', $post_id);
-  $cpm_name    = get_field('sponsor_cpm_name',    $post_id);
-  $cpm_logo    = get_field('sponsor_cpm_logo',    $post_id); // ID allegato
-  if ($cpm_enabled && ($cpm_name || $cpm_logo)) {
-    return [
-      'nome'  => $cpm_name ?: '',
-      'logo'  => $cpm_logo ?: 0,
-      'url'   => '', // il legacy non lo prevede
-      'claim' => '«%s» consiglia questa ricetta',
-      'scope' => 'post-legacy'
-    ];
-  }
-
-  // 3) Mappature per categoria (Options Page)
-  $rows = get_field('sponsorizzazioni_cat','option');
-  if ($rows && is_array($rows)) {
-    $cats = wp_get_post_terms($post_id, 'category', ['fields'=>'ids']);
-    foreach ($rows as $r) {
-      $active  = !empty($r['spons_cat_attivo']);
-      $term_id = (int) ($r['cat_term'] ?? 0);
-      if ($active && $term_id && in_array($term_id, $cats, true)) {
+      if ( $nome || $logo ) {
         return [
-          'nome'  => $r['spons_cat_nome']  ?? '',
-          'logo'  => $r['spons_cat_logo']  ?? 0,
-          'url'   => $r['spons_cat_url']   ?? '',
-          'claim' => $r['spons_cat_claim'] ?: '«%s» consiglia questa ricetta',
-          'scope' => 'category'
+          'nome'  => $nome,
+          'logo'  => $logo,   // ID o URL (thub-result.php lo normalizza in URL)
+          'url'   => $url,
+          'claim' => $claim,
+          'type'  => 'post',
         ];
       }
     }
   }
+
+  // 2) Category-level (Opzioni → “Sponsor per categoria”)
+  // Nota: nomi sub-field tipici: cat_term, spons_cat_nome, spons_cat_logo, spons_cat_url, spons_cat_claim
+  if ( function_exists('get_field') ) {
+    $rows = (array) get_field('sponsorizzazioni_cat', 'option');
+    if ( $rows ) {
+      // Recupero le categorie del post (usa 'category' o adegua se usi una tassonomia diversa)
+      $terms = wp_get_post_terms($post_id, 'category');
+      if ( ! is_wp_error($terms) && $terms ) {
+        // Normalizzo un set di ID/slug del post
+        $post_term_ids  = array_map(fn($t)=> (int)$t->term_id, $terms);
+        $post_term_slugs= array_map(fn($t)=> (string)$t->slug,   $terms);
+
+        foreach( $rows as $row ){
+          $term = $row['cat_term'] ?? null;
+
+          // Match per ID o per slug
+          $match = false;
+          if ( is_array($term) ) {
+            // ACF può restituire un array con keys term_id/slug
+            $rid  = isset($term['term_id']) ? (int)$term['term_id'] : 0;
+            $rsl  = isset($term['slug'])    ? (string)$term['slug'] : '';
+            if ( $rid && in_array($rid, $post_term_ids, true) ) $match = true;
+            if ( !$match && $rsl && in_array($rsl, $post_term_slugs, true) ) $match = true;
+          } elseif ( is_object($term) && isset($term->term_id) ) {
+            $rid = (int) $term->term_id;
+            if ( $rid && in_array($rid, $post_term_ids, true) ) $match = true;
+          } elseif ( is_numeric($term) ) {
+            $rid = (int) $term;
+            if ( $rid && in_array($rid, $post_term_ids, true) ) $match = true;
+          } elseif ( is_string($term) && $term !== '' ) {
+            $rsl = sanitize_title($term);
+            if ( in_array($rsl, $post_term_slugs, true) ) $match = true;
+          }
+
+          if ( $match ) {
+            $nome  = (string) ($row['spons_cat_nome']  ?? '');
+            $logo  =               $row['spons_cat_logo'] ?? ''; // ID o URL
+            $url   = (string) ($row['spons_cat_url']   ?? '');
+            $claim = (string) ($row['spons_cat_claim'] ?? '');
+
+            if ( $nome || $logo ) {
+              return [
+                'nome'  => $nome,
+                'logo'  => $logo,  // ID o URL
+                'url'   => $url,
+                'claim' => $claim,
+                'type'  => 'category',
+              ];
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 3) Nessuno sponsor
   return null;
 }
+endif;
 
 /* ===========================
  * [THUB_SPONSOR_ADMIN] Admin: conteggio ricette sponsorizzabili per categoria
@@ -538,99 +630,6 @@ function thub_admin_sponsor_page(){
   }
   echo '</tbody></table></div>';
 }
-
-/* ===========================
- * [THUB_JSONLD] Schema Recipe esteso (SAFE)
- * =========================== */
-add_action('wp_head', function(){
-  if ( ! is_singular('ricetta') ) return;
-
-  $id  = get_the_ID();
-  $img = get_the_post_thumbnail_url($id,'large') ?: '';
-
-  // [THUB_jsonld] ACF può non esserci → gestisco in sicurezza
-  $has_acf = function_exists('get_field');
-
-  $ing_rows   = $has_acf ? (array) get_field('ingredienti',          $id) : [];
-  $steps_rows = $has_acf ? (array) get_field('passaggi',              $id) : [];
-  $prep_raw   = $has_acf ? (string) get_field('tempo_di_preparazione',$id) : '';
-  $cook_raw   = $has_acf ? (string) get_field('tempo_di_cottura',     $id) : '';
-  $yield      = $has_acf ? (string) get_field('porzioni_base',        $id) : '1';
-  $kcal       = $has_acf ? (string) get_field('kcal_per_porz',        $id) : '';
-  $video      = $has_acf ? (string) get_field('video_url',            $id) : '';
-
-  // [THUB_jsonld] Helper: prendi i nomi dei termini con guardia WP_Error
-  $get_terms_names = function($post_id, $tax){
-    $t = wp_get_post_terms($post_id, $tax, ['fields'=>'names']);
-    if ( is_wp_error($t) || empty($t) ) return [];
-    return array_map('wp_strip_all_tags', (array) $t);
-  };
-
-  // [THUB_jsonld] Helper: durata → ISO 8601 (es. "45" → "PT45M")
-  $to_iso8601 = function($val){
-    $val = trim((string)$val);
-    if ($val === '') return '';
-    if (preg_match('/^\d+$/', $val)) return 'PT'.$val.'M';
-    return $val; // assumo già ISO 8601 o stringa valida
-  };
-
-  // [THUB_jsonld] Ingredienti come stringhe "qta unit nome"
-  $ings = [];
-  foreach ($ing_rows as $row){
-    $nome = isset($row['ing_nome']) ? trim($row['ing_nome']) : '';
-    $qta  = isset($row['ing_qta'])  ? trim((string)$row['ing_qta']) : '';
-    $unit = '';
-    if (isset($row['ing_unita'])) {
-      $unit = ($row['ing_unita'] === 'Altro')
-        ? trim($row['ing_unita_altro'] ?? '')
-        : trim($row['ing_unita']);
-    }
-    $line = trim($qta.' '.$unit.' '.$nome);
-    if ($line !== '') $ings[] = $line;
-  }
-
-  // [THUB_jsonld] Passaggi HowToStep
-  $instr = [];
-  foreach ($steps_rows as $s) {
-    $text = wp_strip_all_tags($s['passo_testo'] ?? '');
-    if ($text !== '') $instr[] = ['@type'=>'HowToStep','text'=>$text];
-  }
-
-  // [THUB_jsonld] Tassonomie custom con fallback
-  $cucina_names   = $get_terms_names($id, 'cucina');
-  $portata_names  = $get_terms_names($id, 'portata');
-  $dieta_names    = $get_terms_names($id, 'dieta');
-
-  // Fallback categoria WP → recipeCategory se 'portata' non c'è
-  if (empty($portata_names)) {
-    $cats = get_the_terms($id, 'category');
-    if (!is_wp_error($cats) && !empty($cats)) {
-      $portata_names = [ $cats[0]->name ];
-    }
-  }
-
-  // [THUB_jsonld] Costruzione schema
-  $schema = [
-    '@context'            => 'https://schema.org',
-    '@type'               => 'Recipe',
-    'name'                => get_the_title($id),
-    'image'               => $img,
-    'recipeIngredient'    => $ings,
-    'recipeInstructions'  => $instr,
-    'prepTime'            => $to_iso8601($prep_raw),
-    'cookTime'            => $to_iso8601($cook_raw),
-    'recipeYield'         => (string) $yield,
-  ];
-  if (!empty($cucina_names))  $schema['recipeCuisine']  = $cucina_names[0];
-  if (!empty($portata_names)) $schema['recipeCategory'] = $portata_names[0];
-  if ($kcal !== '')           $schema['nutrition']      = ['@type'=>'NutritionInformation','calories'=> $kcal.' kcal'];
-  if (!empty($dieta_names))   $schema['suitableForDiet']= $dieta_names;
-  if ($video !== '')          $schema['video']          = ['@type'=>'VideoObject','url'=> esc_url_raw($video)];
-
-  echo "\n<script type='application/ld+json'>",
-       wp_json_encode($schema, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),
-       "</script>\n";
-}, 20);
 
 //[THUB_ASSETS] Carica JS/CSS ricetta in modo condizionato
 add_action('wp_enqueue_scripts', function(){
@@ -2918,13 +2917,7 @@ add_action('wp_enqueue_scripts', function(){
 if ( ! defined('THUB_RESULTS_REGION_META') )   define('THUB_RESULTS_REGION_META',   'thub_results_region');
 if ( ! defined('THUB_RESULTS_REGION_COOKIE') ) define('THUB_RESULTS_REGION_COOKIE', 'thub_results_region');
 
-/* ============================================================
-   [THUB_PRO_CONFIG] — Config Pro per ricette “Chef”
-   - Tax/slug assegnati alle ricette Pro per comparire nella sidebar search.
-   - Puoi leggerli anche da Opzioni (get_option) se preferisci.
-   ============================================================ */
-if( ! defined('THUB_PRO_TERM_TAX') )  define('THUB_PRO_TERM_TAX', 'categoria'); // es.: 'category' o tassonomia custom
-if( ! defined('THUB_PRO_TERM_SLUG') ) define('THUB_PRO_TERM_SLUG', 'pro');      // es.: 'pro'
+
 
 /* [THUB_RESULTS_REGION_CHOICES] Elenco cucine europee principali (senza “contaminazioni” extra-europee) */
 if ( ! function_exists('thub_get_results_region_choices') ){
@@ -3136,194 +3129,152 @@ function thub_results_open_in_new_window(){
   return ($v === 'on');
 }
 
+
+
+
+
+
+
+
 /* ============================================================
-   [THUB_IS_PRO] — Determina se l'utente è Pro
-   - Pluggable: puoi sostituire logica via filtro 'thub_is_pro'
-   - Default: legge user_meta 'thub_is_pro' (true/1) se presente
-   ============================================================ */
+ * [THUB_PRO_CONFIG] — Config “Ricette dello Chef (Pro)”
+ * - Tassonomia/termine usati per marcare le ricette Pro
+ * - Mantieni 'category' e 'pro' salvo diverse esigenze
+ * ============================================================ */
+if ( ! defined('THUB_PRO_TERM_TAX') )  define('THUB_PRO_TERM_TAX',  'category');
+if ( ! defined('THUB_PRO_TERM_SLUG') ) define('THUB_PRO_TERM_SLUG', 'pro');
+
+/* ============================================================
+ * [THUB_IS_PRO] — Verifica se l’utente è Pro (filterable)
+ * ============================================================ */
 function thub_is_pro( $user_id ){
-  $flag = (bool) get_user_meta($user_id, 'thub_is_pro', true);
-  return (bool) apply_filters('thub_is_pro', $flag, $user_id);
+  $flag = (bool) get_user_meta( $user_id, 'thub_is_pro', true );
+  return (bool) apply_filters( 'thub_is_pro', $flag, $user_id );
 }
 
+/* (opzionale) MIME immagini consentite per upload featured */
+if ( ! defined('THUB_ALLOWED_IMAGE_MIME') ) {
+  define( 'THUB_ALLOWED_IMAGE_MIME', 'image/jpeg,image/png,image/webp,image/gif,image/svg+xml' );
+}
+
+
+
+
+
+
+
+
+
+
 /* ============================================================
-   [THUB_SAVE_USER_RECIPE_AJAX] — Crea/Aggiorna ricetta da frontend
-   Requisiti:
-   - Utente loggato
-   - Nonce valido 'thub_save_user_recipe'
-   - Salva CPT 'ricetta' + ACF secondo schema progetto
-   ============================================================ */
-add_action('wp_ajax_thub_save_user_recipe', 'thub_save_user_recipe_handler');
-function thub_save_user_recipe_handler(){
-  if( ! is_user_logged_in() ){
-    wp_send_json([ 'success' => false, 'message' => 'Devi essere loggato per salvare una ricetta.' ]);
-  }
+ * [THUB_ADMIN_PENDING] — Pannello moderazione ricette
+ * ============================================================ */
+add_action('admin_menu', function(){
+  add_menu_page(
+    'Ricette da validare', 'Ricette da validare', 'edit_posts',
+    'thub-ricette-validare', 'thub_admin_pending_nonna',
+    'dashicons-yes-alt', 58
+  );
+  add_submenu_page(
+    'thub-ricette-validare', 'Ricette della Nonna', 'Ricette della Nonna', 'edit_posts',
+    'thub-ricette-validare', 'thub_admin_pending_nonna'
+  );
+  add_submenu_page(
+    'thub-ricette-validare', 'Ricette dello Chef', 'Ricette dello Chef', 'edit_posts',
+    'thub-ricette-chef', 'thub_admin_pending_chef'
+  );
+});
 
-  if( ! isset($_POST['thub_nr_nonce']) || ! wp_verify_nonce($_POST['thub_nr_nonce'], 'thub_save_user_recipe') ){
-    wp_send_json([ 'success' => false, 'message' => 'Sicurezza non valida (nonce).' ]);
-  }
+/* Liste */
+function thub_admin_pending_nonna(){
+  thub_admin_pending_list([
+    'title'   => 'Ricette della Nonna — In attesa di approvazione',
+    'is_chef' => false,
+  ]);
+}
+function thub_admin_pending_chef(){
+  thub_admin_pending_list([
+    'title'   => 'Ricette dello Chef — In attesa di approvazione',
+    'is_chef' => true,
+  ]);
+}
 
-  $user_id = get_current_user_id();
+/* Tabella generica */
+function thub_admin_pending_list( $args ){
+  $is_chef = ! empty($args['is_chef']);
+  $title   = $args['title'] ?? 'Ricette da validare';
 
-  // --- Sanitizzazione campi base
-  $submit_type   = isset($_POST['thub_submit_type']) ? sanitize_text_field($_POST['thub_submit_type']) : 'draft'; // draft|publish
-  $post_title    = isset($_POST['post_title']) ? wp_strip_all_tags($_POST['post_title']) : '';
-  $intro_breve   = isset($_POST['intro_breve']) ? sanitize_text_field($_POST['intro_breve']) : '';
-  $porzioni_base = isset($_POST['porzioni_base']) ? intval($_POST['porzioni_base']) : 0;
-  $kcal_per_porz = isset($_POST['kcal_per_porz']) ? intval($_POST['kcal_per_porz']) : 0;
-  $tprep         = isset($_POST['tempo_di_preparazione']) ? sanitize_text_field($_POST['tempo_di_preparazione']) : '';
-  $tcott         = isset($_POST['tempo_di_cottura']) ? sanitize_text_field($_POST['tempo_di_cottura']) : '';
-  $video_url     = isset($_POST['video_url']) ? esc_url_raw($_POST['video_url']) : '';
+  $tax  = THUB_PRO_TERM_TAX;
+  $slug = THUB_PRO_TERM_SLUG;
 
-  $ricetta_vis   = isset($_POST['ricetta_visibilita']) ? sanitize_text_field($_POST['ricetta_visibilita']) : 'nonna'; // nonna|chef
-  $ricetta_icona = isset($_POST['ricetta_icona']) ? sanitize_text_field($_POST['ricetta_icona']) : '';
-  $ricetta_icona_desc = isset($_POST['ricetta_icona_desc']) ? sanitize_text_field($_POST['ricetta_icona_desc']) : '';
+  $tax_query = $is_chef
+    ? [[ 'taxonomy'=>$tax, 'field'=>'slug', 'terms'=>[$slug], 'operator'=>'IN' ]]
+    : [[ 'taxonomy'=>$tax, 'field'=>'slug', 'terms'=>[$slug], 'operator'=>'NOT IN' ]];
 
-  $vino_nome = isset($_POST['vino_nome']) ? sanitize_text_field($_POST['vino_nome']) : '';
-  $vino_den  = isset($_POST['vino_denominazione']) ? sanitize_text_field($_POST['vino_denominazione']) : '';
-
-  // --- Validazioni minime
-  if( ! $post_title ){
-    wp_send_json([ 'success' => false, 'message' => 'Inserisci un titolo per la ricetta.' ]);
-  }
-  if( $porzioni_base < 1 ){
-    wp_send_json([ 'success' => false, 'message' => 'Indica il numero di porzioni (minimo 1).' ]);
-  }
-
-  // --- Stato del post
-  $post_status = ( $submit_type === 'publish' ) ? 'publish' : 'draft';
-
-  // --- Creazione post
-  $postarr = [
-    'post_type'   => 'ricetta',
-    'post_title'  => $post_title,
-    'post_status' => $post_status,
-    'post_author' => $user_id,
-  ];
-  $post_id = wp_insert_post( $postarr, true );
-
-  if( is_wp_error($post_id) ){
-    wp_send_json([ 'success' => false, 'message' => 'Errore nel salvataggio della ricetta.' ]);
-  }
-
-  // --- Mappatura ACF
-  thub_nr_update_acf_fields($post_id, [
-    'intro_breve'            => $intro_breve,
-    'porzioni_base'          => $porzioni_base,
-    'kcal_per_porz'          => $kcal_per_porz,
-    'tempo_di_preparazione'  => $tprep,
-    'tempo_di_cottura'       => $tcott,
-    'video_url'              => $video_url,
-    'ricetta_icona'          => $ricetta_icona,
-    'ricetta_icona_desc'     => $ricetta_icona_desc,
-    'vino_nome'              => $vino_nome,
-    'vino_denominazione'     => $vino_den,
-    // Nota: ingredienti/passaggi vengono trattati sotto come repeater
+  $q = new WP_Query([
+    'post_type'      => 'ricetta',
+    'post_status'    => 'pending',
+    'posts_per_page' => 20,
+    'tax_query'      => $tax_query,
+    'orderby'        => 'date',
+    'order'          => 'DESC',
   ]);
 
-  // --- Ingredienti (repeater)
-  $ingredienti_raw = isset($_POST['ingredienti']) && is_array($_POST['ingredienti']) ? $_POST['ingredienti'] : [];
-  $ingredienti = [];
-  foreach( $ingredienti_raw as $row ){
-    $nome = isset($row['nome']) ? sanitize_text_field($row['nome']) : '';
-    if( ! $nome ) continue;
-    $qta  = isset($row['qta']) ? sanitize_text_field($row['qta']) : '';
-    $unita = isset($row['unita']) ? sanitize_text_field($row['unita']) : '';
-    $unita_altro = isset($row['unita_altro']) ? sanitize_text_field($row['unita_altro']) : '';
-
-    $ingredienti[] = [
-      'ing_nome'        => $nome,
-      'ing_qta'         => $qta,
-      'ing_unita'       => $unita,
-      'ing_unita_altro' => $unita_altro,
-    ];
-  }
-  if( function_exists('update_field') ){
-    update_field('ingredienti_rep', $ingredienti, $post_id);
-  } else {
-    update_post_meta($post_id, 'ingredienti_rep', $ingredienti);
+  echo '<div class="wrap"><h1>'.esc_html($title).'</h1>';
+  if ( ! $q->have_posts() ){
+    echo '<p>Nessuna ricetta in attesa.</p></div>'; return;
   }
 
-  // --- Passaggi (repeater semplificato)
-  $passaggi_raw = isset($_POST['passaggi']) && is_array($_POST['passaggi']) ? $_POST['passaggi'] : [];
-  $passaggi = [];
-  // Ordina per chiave numerica ascendente, così #1, #2...
-  ksort($passaggi_raw, SORT_NUMERIC);
-  foreach( $passaggi_raw as $txt ){
-    $t = sanitize_text_field($txt);
-    if( ! $t ) continue;
-    // Allinea al nome sub-field usato nel frontend (usa quello che hai nel progetto: "passo_testo" o simile)
-    $passaggi[] = [ 'passo_testo' => $t ];
-  }
-  if( function_exists('update_field') ){
-    // NB: sostituisci 'passaggi_rep' con il key reale del tuo repeater se diverso
-    update_field('passaggi_rep', $passaggi, $post_id);
-  } else {
-    update_post_meta($post_id, 'passaggi_rep', $passaggi);
-  }
+  echo '<table class="widefat striped"><thead><tr>';
+  echo '<th>Titolo</th><th>Utente</th><th>Azioni</th>';
+  echo '</tr></thead><tbody>';
 
-  // --- Vino (repeater a 1 riga se valorizzato)
-  if( $vino_nome || $vino_den ){
-    $vini = [
-      [
-        'vino_nome'         => $vino_nome,
-        'vino_denominazione'=> $vino_den,
-        'vino_link'         => '', // non richiesto nel form, lasciato vuoto
-      ]
-    ];
-    if( function_exists('update_field') ){
-      update_field('vini', $vini, $post_id);
-    } else {
-      update_post_meta($post_id, 'vini', $vini);
-    }
-  }
+  while ( $q->have_posts() ){ $q->the_post();
+    $pid   = get_the_ID();
+    $auth  = get_user_by( 'id', (int) get_post_field('post_author', $pid) );
+    $uname = $auth ? ( $auth->display_name ?: $auth->user_login ) : '—';
+    $uemail= $auth ? $auth->user_email : '—';
 
-  // --- Visibilità: Nonna (privata) vs Chef (Pro)
-  if( $ricetta_vis === 'chef' ){
-    $is_pro = thub_is_pro($user_id);
-    if( $is_pro ){
-      // Assegna termine Pro per l’inclusione nella sidebar search
-      $tax  = THUB_PRO_TERM_TAX;
-      $slug = THUB_PRO_TERM_SLUG;
-      $term = get_term_by('slug', $slug, $tax);
-      if( $term && ! is_wp_error($term) ){
-        wp_set_post_terms( $post_id, [ (int)$term->term_id ], $tax, true );
-      }
-    } else {
-      // Non Pro → forzo privata e avviso utente nel messaggio
-      $ricetta_vis = 'nonna';
-    }
-  }
+    $nonce_app = wp_create_nonce( 'thub_recipe_approve_'.$pid );
+    $nonce_den = wp_create_nonce( 'thub_recipe_deny_'.$pid );
 
-  // --- URL redirect (singola ricetta) dopo salvataggio/publish
-  $redirect = get_permalink($post_id);
+    $link_preview = get_preview_post_link( $pid );
+    $link_app     = admin_url( 'admin-post.php?action=thub_recipe_approve&post_id='.$pid.'&_wpnonce='.$nonce_app );
+    $link_den     = admin_url( 'admin-post.php?action=thub_recipe_deny&post_id='.$pid.'&_wpnonce='.$nonce_den );
 
-  // --- Messaggio finale
-  if( $submit_type === 'publish' ){
-    if( $ricetta_vis === 'chef' ){
-      wp_send_json([ 'success' => true, 'message' => 'Ricetta pubblicata (Chef - Pro).', 'redirect' => $redirect ]);
-    } else {
-      wp_send_json([ 'success' => true, 'message' => 'Ricetta pubblicata (privata).', 'redirect' => $redirect ]);
-    }
-  } else {
-    $msg = 'Bozza salvata.';
-    if( isset($is_pro) && ! $is_pro && isset($_POST['ricetta_visibilita']) && $_POST['ricetta_visibilita']==='chef' ){
-      $msg .= ' Nota: per pubblicare come “Ricette dello Chef” è necessario un account Pro.';
-    }
-    wp_send_json([ 'success' => true, 'message' => $msg, 'redirect' => $redirect ]);
+    echo '<tr>';
+    echo '<td><strong>'.esc_html(get_the_title()).'</strong></td>';
+    echo '<td>'.esc_html($uname).' &lt;'.esc_html($uemail).'&gt;</td>';
+    echo '<td>
+            <a class="button" href="'.esc_url($link_preview).'" target="_blank" rel="noopener">Leggi ricetta</a>
+            <a class="button button-primary" href="'.esc_url($link_app).'" style="margin-left:6px;">Approva</a>
+            <a class="button" href="'.esc_url($link_den).'" style="margin-left:6px;">Nega</a>
+          </td>';
+    echo '</tr>';
   }
+  wp_reset_postdata();
+  echo '</tbody></table></div>';
 }
 
 /* ============================================================
-   [THUB_NR_UPDATE_ACF_FIELDS] — Aggiorna campi ACF “semplici”
-   Array $fields = [ meta_key => value, ... ]
-   ============================================================ */
-function thub_nr_update_acf_fields($post_id, array $fields){
-  foreach( $fields as $meta_key => $val ){
-    if( function_exists('update_field') ){
-      update_field($meta_key, $val, $post_id);
-    } else {
-      update_post_meta($post_id, $meta_key, $val);
-    }
-  }
-}
+ * [THUB_ADMIN_PENDING_ACTIONS] — Approva / Nega
+ * ============================================================ */
+add_action('admin_post_thub_recipe_approve', function(){
+  $pid = isset($_GET['post_id']) ? (int) $_GET['post_id'] : 0;
+  if ( ! current_user_can('edit_post', $pid) ) wp_die('Permessi insufficienti.');
+  check_admin_referer('thub_recipe_approve_'.$pid);
+  wp_update_post([ 'ID'=>$pid, 'post_status'=>'publish' ]);
+  delete_post_meta( $pid, 'thub_approval_status' );
+  wp_safe_redirect( wp_get_referer() ?: admin_url('admin.php?page=thub-ricette-validare') );
+  exit;
+});
+
+add_action('admin_post_thub_recipe_deny', function(){
+  $pid = isset($_GET['post_id']) ? (int) $_GET['post_id'] : 0;
+  if ( ! current_user_can('edit_post', $pid) ) wp_die('Permessi insufficienti.');
+  check_admin_referer('thub_recipe_deny_'.$pid);
+  wp_update_post([ 'ID'=>$pid, 'post_status'=>'draft' ]);
+  update_post_meta( $pid, 'thub_approval_status', 'denied' );
+  wp_safe_redirect( wp_get_referer() ?: admin_url('admin.php?page=thub-ricette-validare') );
+  exit;
+});
