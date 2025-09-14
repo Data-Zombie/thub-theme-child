@@ -3160,7 +3160,226 @@ if ( ! defined('THUB_ALLOWED_IMAGE_MIME') ) {
 
 
 
+/* ============================================================
+ * [THUB_SAVE_USER_RECIPE_AJAX]
+ * Crea/aggiorna post 'ricetta' con schema Canonico-Only.
+ * Requisiti lato UI:
+ * - Titolo, Intro, Tempi, Immagine, >=1 ingrediente, >=1 attrezzatura, >=3 passaggi
+ * ============================================================ */
+if ( ! function_exists('thub_save_user_recipe_handler') ) {
+  add_action('wp_ajax_thub_save_user_recipe', 'thub_save_user_recipe_handler');
+  function thub_save_user_recipe_handler(){
+    if ( ! is_user_logged_in() ) {
+      wp_send_json( [ 'success'=>false, 'message'=>'Devi essere loggato per salvare una ricetta.' ] );
+    }
+    if ( ! isset($_POST['thub_nr_nonce']) || ! wp_verify_nonce($_POST['thub_nr_nonce'], 'thub_save_user_recipe') ) {
+      wp_send_json( [ 'success'=>false, 'message'=>'Sicurezza non valida (nonce).' ] );
+    }
 
+    $user_id = get_current_user_id();
+
+    // --- [THUB_SANITIZE] campi base
+    $submit_type   = isset($_POST['thub_submit_type']) ? sanitize_text_field($_POST['thub_submit_type']) : 'draft'; // draft|publish
+    $post_title    = isset($_POST['post_title'])       ? wp_strip_all_tags($_POST['post_title']) : '';
+    $intro_breve   = isset($_POST['intro_breve'])      ? sanitize_text_field($_POST['intro_breve']) : '';
+    $porzioni_base = 1; // monoporzione enforced
+    $kcal_per_porz = isset($_POST['kcal_per_porz'])    ? floatval($_POST['kcal_per_porz']) : 0;
+    $tprep         = isset($_POST['tempo_di_preparazione']) ? sanitize_text_field($_POST['tempo_di_preparazione']) : '';
+    $tcott         = isset($_POST['tempo_di_cottura'])      ? sanitize_text_field($_POST['tempo_di_cottura']) : '';
+    $video_url     = isset($_POST['video_url'])        ? esc_url_raw($_POST['video_url']) : '';
+    $notes_html    = isset($_POST['eventuali_note_tecniche']) ? wp_kses_post($_POST['eventuali_note_tecniche']) : '';
+
+    $ricetta_dest  = isset($_POST['ricetta_dest']) ? sanitize_text_field($_POST['ricetta_dest']) : 'nonna'; // nonna|chef
+    $nonna_vis     = isset($_POST['nonna_vis'])    ? sanitize_text_field($_POST['nonna_vis'])    : 'pubblica'; // pubblica|privata
+
+    if ( ! $post_title ) {
+      wp_send_json( [ 'success'=>false, 'message'=>'Inserisci un titolo per la ricetta.' ] );
+    }
+
+    // --- [THUB_STATUS] logica stati
+    $post_status = 'draft';
+    if ( $submit_type === 'publish' ) {
+      if ( $ricetta_dest === 'nonna' ) {
+        $post_status = ( $nonna_vis === 'privata' ) ? 'private' : 'pending';
+      } elseif ( $ricetta_dest === 'chef' ) {
+        $post_status = 'pending';
+      }
+    }
+
+    // --- [THUB_INSERT] crea post
+    $postarr = [
+      'post_type'   => 'ricetta',
+      'post_title'  => $post_title,
+      'post_status' => $post_status,
+      'post_author' => $user_id,
+    ];
+    $post_id = wp_insert_post( $postarr, true );
+    if ( is_wp_error($post_id) ) {
+      wp_send_json( [ 'success'=>false, 'message'=>'Errore nel salvataggio della ricetta.' ] );
+    }
+
+    // --- [THUB_MAP_SIMPLE] mappa canonica semplice
+    $simple = [
+      'intro_breve'            => $intro_breve,
+      'porzioni_base'          => $porzioni_base,
+      'kcal_per_porz'          => $kcal_per_porz,
+      'tempo_di_preparazione'  => $tprep,
+      'tempo_di_cottura'       => $tcott,
+      'video_url'              => $video_url,
+      'eventuali_note_tecniche'=> $notes_html,
+    ];
+    foreach( $simple as $k => $v ){
+      if ( function_exists('update_field') ) update_field( $k, $v, $post_id );
+      else                                   update_post_meta( $post_id, $k, $v );
+    }
+
+    // --- [THUB_INGREDIENTI] repeater ingredienti_rep
+    $ingredienti_raw = ( isset($_POST['ingredienti']) && is_array($_POST['ingredienti']) ) ? $_POST['ingredienti'] : [];
+    $ingredienti = [];
+    foreach ( $ingredienti_raw as $row ) {
+      $nome  = isset($row['nome']) ? sanitize_text_field($row['nome']) : '';
+      if ( $nome === '' ) continue;
+      $qta   = isset($row['qta'])  ? sanitize_text_field($row['qta'])  : '';
+      $unita = isset($row['unita'])? sanitize_text_field($row['unita']): '';
+      $altro = isset($row['unita_altro']) ? sanitize_text_field($row['unita_altro']) : '';
+      $ingredienti[] = [
+        'ing_nome'        => $nome,
+        'ing_qta'         => $qta,
+        'ing_unita'       => $unita,  // il front-end userà ing_unita_altro se unita == 'altro'
+        'ing_unita_altro' => $altro,
+      ];
+    }
+    if ( function_exists('update_field') ) update_field('ingredienti_rep', $ingredienti, $post_id);
+    else                                   update_post_meta( $post_id, 'ingredienti_rep', $ingredienti );
+
+    // --- [THUB_PASSAGGI] repeater passaggi_rep (canonico)
+    $passaggi_raw = ( isset($_POST['passaggi']) && is_array($_POST['passaggi']) ) ? $_POST['passaggi'] : [];
+    ksort($passaggi_raw, SORT_NUMERIC);
+    $passaggi = [];
+    foreach ( $passaggi_raw as $txt ) {
+      $t = sanitize_text_field($txt);
+      if ( $t === '' ) continue;
+      $passaggi[] = [ 'passo_testo' => $t ];
+    }
+    if ( function_exists('update_field') ) update_field('passaggi_rep', $passaggi, $post_id);
+    else                                   update_post_meta( $post_id, 'passaggi_rep', $passaggi );
+
+    // --- [THUB_ATTREZZATURE] repeater attrezzature
+    $att_raw = ( isset($_POST['attrezzature']) && is_array($_POST['attrezzature']) ) ? $_POST['attrezzature'] : [];
+    $attrezzature = [];
+    foreach( $att_raw as $row ){
+      $key = isset($row['key'])   ? sanitize_text_field($row['key'])   : '';
+      $txt = isset($row['testo']) ? sanitize_text_field($row['testo']) : '';
+      if ( $key === '' && $txt === '' ) continue;
+      $attrezzature[] = [
+        'att_icone_key' => $key,  // es. forno/pentola/padella/custom_svg
+        'att_testo'     => $txt,  // descrizione opzionale
+      ];
+    }
+    if ( function_exists('update_field') ) update_field('attrezzature', $attrezzature, $post_id);
+    else                                   update_post_meta( $post_id, 'attrezzature', $attrezzature );
+
+    // --- [THUB_VINI] repeater a 1 riga se valorizzato
+    $vino_nome = isset($_POST['vino_nome']) ? sanitize_text_field($_POST['vino_nome']) : '';
+    $vino_den  = isset($_POST['vino_denominazione']) ? sanitize_text_field($_POST['vino_denominazione']) : '';
+    if ( $vino_nome !== '' || $vino_den !== '' ) {
+      $vini = [[ 'vino_nome'=>$vino_nome, 'vino_denominazione'=>$vino_den, 'vino_link'=>'' ]];
+      if ( function_exists('update_field') ) update_field('vini', $vini, $post_id);
+      else                                   update_post_meta( $post_id, 'vini', $vini );
+    } else {
+      if ( function_exists('update_field') ) update_field('vini', [], $post_id);
+      else                                   delete_post_meta($post_id, 'vini');
+    }
+
+    // --- [THUB_FEATURED_UPLOAD] immagine in evidenza + sostituzione precedente
+    $need_image_check = ( $submit_type === 'publish' ); // obbligatoria al publish
+    $has_featured     = (bool) get_post_thumbnail_id($post_id);
+    if ( ! empty($_FILES['thub_recipe_image']['name']) ) {
+      $upload_res = thub_handle_recipe_featured_upload( $_FILES['thub_recipe_image'], $post_id, $user_id );
+      if ( is_wp_error($upload_res) ) {
+        wp_send_json( [ 'success'=>false, 'message'=>'Upload immagine: '.$upload_res->get_error_message() ] );
+      }
+      $has_featured = true;
+    }
+    if ( $need_image_check && ! $has_featured ) {
+      wp_send_json( [ 'success'=>false, 'message'=>'Carica l’immagine della ricetta.' ] );
+    }
+
+    // --- [THUB_CHEF_PRO] assegna termine Pro (category:pro) se utente Pro
+    if ( $submit_type === 'publish' && $ricetta_dest === 'chef' && function_exists('thub_is_pro') && thub_is_pro($user_id) ) {
+      $tax  = defined('THUB_PRO_TERM_TAX')  ? THUB_PRO_TERM_TAX  : 'category';
+      $slug = defined('THUB_PRO_TERM_SLUG') ? THUB_PRO_TERM_SLUG : 'pro';
+      $term = get_term_by('slug', $slug, $tax);
+      if ( ! $term || is_wp_error($term) ) {
+        $ins = wp_insert_term( ucfirst($slug), $tax, [ 'slug'=>$slug ] );
+        if ( ! is_wp_error($ins) ) $term = get_term_by('id', $ins['term_id'], $tax);
+      }
+      if ( $term && ! is_wp_error($term) ) {
+        wp_set_post_terms( $post_id, [ (int) $term->term_id ], $tax, true );
+      }
+    }
+
+    // --- [THUB_SERVER_VALIDATE_MIN] protezione minima lato server
+    if ( $submit_type === 'publish' ) {
+      if ( count($ingredienti)   < 1 ) wp_send_json( [ 'success'=>false, 'message'=>'Inserisci almeno 1 ingrediente.' ] );
+      if ( count($attrezzature)  < 1 ) wp_send_json( [ 'success'=>false, 'message'=>'Inserisci almeno 1 attrezzatura.' ] );
+      if ( count($passaggi)      < 3 ) wp_send_json( [ 'success'=>false, 'message'=>'Inserisci almeno 3 passaggi.' ] );
+    }
+
+    $redirect = get_permalink($post_id);
+    $message  = ($post_status==='draft')   ? 'Bozza salvata.' :
+                ($post_status==='pending') ? 'Richiesta inviata: in attesa di approvazione.' :
+                ($post_status==='private') ? 'Ricetta privata salvata.' : 'Ricetta salvata.';
+
+    wp_send_json( [ 'success'=>true, 'message'=>$message, 'redirect'=>$redirect ] );
+  }
+}
+
+/* ============================================================
+ * [THUB_HANDLE_RECIPE_FEATURED_UPLOAD]
+ * - Valida MIME
+ * - Carica file, crea attachment, genera metadata
+ * - Imposta featured image
+ * - Se presente una featured precedente → la elimina (file incluso)
+ * ============================================================ */
+if ( ! function_exists('thub_handle_recipe_featured_upload') ) {
+  function thub_handle_recipe_featured_upload( $file, $post_id, $user_id ){
+    if ( ! function_exists('wp_handle_upload') )                     require_once ABSPATH . 'wp-admin/includes/file.php';
+    if ( ! function_exists('wp_generate_attachment_metadata') )      require_once ABSPATH . 'wp-admin/includes/image.php';
+
+    // MIME consentiti con fallback se la costante non esiste
+    $allowed = defined('THUB_ALLOWED_IMAGE_MIME')
+      ? array_map('trim', explode(',', THUB_ALLOWED_IMAGE_MIME))
+      : [ 'image/jpeg','image/png','image/webp','image/gif','image/svg+xml' ];
+
+    $type = isset($file['type']) ? $file['type'] : '';
+    if ( $type && ! in_array($type, $allowed, true) ) {
+      return new WP_Error('mime', 'Formato immagine non supportato.');
+    }
+
+    $move = wp_handle_upload( $file, [ 'test_form' => false ] );
+    if ( isset($move['error']) ) return new WP_Error('upload', $move['error']);
+
+    $filetype  = wp_check_filetype( $move['file'], null );
+    $attach_id = wp_insert_attachment( [
+      'post_mime_type' => $filetype['type'],
+      'post_title'     => sanitize_file_name( basename($move['file']) ),
+      'post_content'   => '',
+      'post_status'    => 'inherit',
+      'post_author'    => $user_id,
+    ], $move['file'], $post_id );
+    if ( is_wp_error($attach_id) ) return $attach_id;
+
+    $metadata = wp_generate_attachment_metadata( $attach_id, $move['file'] );
+    wp_update_attachment_metadata( $attach_id, $metadata );
+
+    $old = get_post_thumbnail_id( $post_id );
+    set_post_thumbnail( $post_id, $attach_id );
+    if ( $old && $old != $attach_id ) wp_delete_attachment( $old, true );
+
+    return $attach_id;
+  }
+}
 
 
 
