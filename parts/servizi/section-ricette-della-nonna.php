@@ -337,7 +337,7 @@ function thub_svg_swap(){ ?>
 
   <!-- BOX 2 — Ricette private -->
   <div class="thub-table thub-priv" id="thub-box-prv">
-    <div class="thub-box__title">Ricette private</div>
+        <div class="thub-box__title">Ricette private</div>
     <div class="thub-box__subtitle">Le tue creazioni culinarie visibili solo a te.</div>
 
     <div class="thub-thead" aria-hidden="true">
@@ -362,9 +362,9 @@ function thub_svg_swap(){ ?>
 /* ============================================================
    [THUB_NONNA_JS] — Filtri + Toggle info + Sposta (AJAX)
    ============================================================ */
-(function(){
-  const $  = (s, c=document)=>c.querySelector(s);
-  const $$ = (s, c=document)=>Array.from(c.querySelectorAll(s));
+  (function(){
+    const $  = (s, c)=> (c || document).querySelector(s);
+    const $$ = (s, c)=> Array.from((c || document).querySelectorAll(s));
 
   // Dropdown ancorati
   function bindDropdown(btnId, modalId){
@@ -390,11 +390,13 @@ function thub_svg_swap(){ ?>
   const chkPrv = document.getElementById('thub-chk-prv');
   const boxPub = document.getElementById('thub-box-pub');
   const boxPrv = document.getElementById('thub-box-prv');
-  function applyVis(){ if(boxPub) boxPub.style.display = chkPub?.checked ? '' : 'none';
-                      if(boxPrv) boxPrv.style.display = chkPrv?.checked ? '' : 'none'; }
-  chkPub?.addEventListener('change', applyVis);
-  chkPrv?.addEventListener('change', applyVis);
-  applyVis();
+    function applyVis(){
+      if (boxPub) { boxPub.style.display = (chkPub && chkPub.checked) ? '' : 'none'; }
+      if (boxPrv) { boxPrv.style.display = (chkPrv && chkPrv.checked) ? '' : 'none'; }
+    }
+    if (chkPub) { chkPub.addEventListener('change', applyVis); }
+    if (chkPrv) { chkPrv.addEventListener('change', applyVis); }
+    applyVis();
 
   // A–Z
   const chipWrap    = document.getElementById('thub-filter-chips');
@@ -402,15 +404,17 @@ function thub_svg_swap(){ ?>
   $$('#thub-az-list button').forEach(b=>{
     b.addEventListener('click', ()=>{
       const L = b.getAttribute('data-letter') || '';
-      $$('.thub-trow').forEach(r=>{
-        const rl = (r.getAttribute('data-letter')||'').toUpperCase();
-        r.style.display = L && rl !== L ? 'none' : '';
-      });
-      document.getElementById('thub-modal-az')?.setAttribute('aria-hidden','true');
-      document.getElementById('thub-filter-az')?.setAttribute('aria-expanded','false');
-      if(!chipWrap || !chipLetter) return;
-      if(L){ chipLetter.textContent = 'Lettera: ' + L; chipLetter.hidden = false; chipWrap.hidden = false; }
-      else { chipLetter.hidden = true; chipWrap.hidden = true; }
+        $$('.thub-trow').forEach(r=>{
+          const rl = (r.getAttribute('data-letter')||'').toUpperCase();
+          r.style.display = L && rl !== L ? 'none' : '';
+        });
+        const modalAz = document.getElementById('thub-modal-az');
+        if (modalAz) { modalAz.setAttribute('aria-hidden','true'); }
+        const filterAz = document.getElementById('thub-filter-az');
+        if (filterAz) { filterAz.setAttribute('aria-expanded','false'); }
+        if(!chipWrap || !chipLetter) return;
+        if(L){ chipLetter.textContent = 'Lettera: ' + L; chipLetter.hidden = false; chipWrap.hidden = false; }
+        else { chipLetter.hidden = true; chipWrap.hidden = true; }
     });
   });
 
@@ -435,8 +439,11 @@ function thub_svg_swap(){ ?>
           method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8'}, credentials:'same-origin',
           body: new URLSearchParams({ action:'thub_toggle_recipe_visibility', _ajax_nonce:NONCE, post_id:pid, to:to }).toString()
         });
-        const json = await res.json();
-        if(!res.ok || !json || !json.success){ throw new Error(json?.data?.message || 'Errore'); }
+          const json = await res.json();
+          if(!res.ok || !json || !json.success){
+            const errMsg = (json && json.data && json.data.message) ? json.data.message : 'Errore';
+            throw new Error(errMsg);
+          }
         location.reload();
       }catch(err){
         alert('Impossibile spostare la ricetta: ' + (err.message||'Errore'));

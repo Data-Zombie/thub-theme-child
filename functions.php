@@ -3200,8 +3200,9 @@ if ( ! function_exists('thub_save_user_recipe_handler') ) {
     $edit_post_id = isset($_POST['edit_post_id']) ? absint($_POST['edit_post_id']) : 0;
     $can_update   = 0;
     if ( $edit_post_id && get_post_type($edit_post_id) === 'ricetta' ) {
-      $is_author = (int) get_post_field('post_author', $edit_post_id) === (int) $user_id;
-      if ( $is_author && current_user_can('edit_post', $edit_post_id) ) {
+      $is_author      = (int) get_post_field('post_author', $edit_post_id) === (int) $user_id;
+      $can_edit_post  = current_user_can('edit_post', $edit_post_id);
+      if ( $is_author || $can_edit_post ) {
         $can_update = $edit_post_id;
       }
     }
@@ -3433,7 +3434,8 @@ add_action('wp_ajax_thub_get_recipe_data', function(){
   if ( ! $pid || get_post_type($pid) !== 'ricetta' ) {
     wp_send_json_error([ 'message' => 'ID ricetta non valido.' ], 400);
   }
-  if ( ! current_user_can('edit_post', $pid) || (int) get_post_field('post_author', $pid) !== (int) get_current_user_id() ) {
+  $is_author = (int) get_post_field('post_author', $pid) === (int) get_current_user_id();
+  if ( ! $is_author && ! current_user_can('edit_post', $pid) ) {
     wp_send_json_error([ 'message' => 'Permessi insufficienti.' ], 403);
   }
 
@@ -3549,7 +3551,8 @@ add_action('wp_ajax_thub_toggle_recipe_visibility', function(){
   }
 
   // Permessi: autore o chi può editare il post
-  if ( ! current_user_can('edit_post', $post_id) || (int) get_post_field('post_author', $post_id) !== (int) $user_id ) {
+  $is_author = (int) get_post_field('post_author', $post_id) === (int) $user_id;
+  if ( ! $is_author && ! current_user_can('edit_post', $post_id) ) {
     wp_send_json_error([ 'message' => 'Permessi insufficienti.' ], 403);
   }
 

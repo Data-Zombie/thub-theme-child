@@ -526,281 +526,402 @@ if ( isset($_GET['post_id'], $_GET['mode']) && $_GET['mode'] === 'edit' ) {
 
   <script>
   (function(){
-    const form   = document.getElementById('thub-nr-form');
-    const ajax   = form?.dataset?.ajaxurl || '';
-    const nonce  = form?.dataset?.nonce || '';
-    const isPro  = form?.dataset?.isPro === '1';
-    const msg    = document.getElementById('thub-nr-msg');
+    const form = document.getElementById('thub-nr-form');
+    if (!form) { return; }
 
-    const $  = (s,c=document)=>c.querySelector(s);
-    const $$ = (s,c=document)=>Array.from(c.querySelectorAll(s));
+    const ajax  = (form.dataset && form.dataset.ajaxurl) ? form.dataset.ajaxurl : '';
+    const nonce = (form.dataset && form.dataset.nonce) ? form.dataset.nonce : '';
+    const isPro = !!(form.dataset && form.dataset.isPro === '1');
+    const msg   = document.getElementById('thub-nr-msg');
+    const submitTypeField = document.getElementById('thub_submit_type');
+
+    const $  = (s, c)=> (c || document).querySelector(s);
+    const $$ = (s, c)=> Array.from((c || document).querySelectorAll(s));
+    const fillTpl = (tpl, index)=> tpl ? tpl.replace(/__i__/g, String(index)) : '';
+
+    const ingWrap   = document.getElementById('thub-ing-repeater');
+    const ingTplEl  = document.getElementById('tpl-ing-row');
+    const ingTpl    = ingTplEl ? ingTplEl.innerHTML : '';
+    const toolWrap  = document.getElementById('thub-tool-repeater');
+    const toolTplEl = document.getElementById('tpl-tool-row');
+    const toolTpl   = toolTplEl ? toolTplEl.innerHTML : '';
+    const stWrap    = document.getElementById('thub-steps-repeater');
+    const stTplEl   = document.getElementById('tpl-step-row');
+    const stTpl     = stTplEl ? stTplEl.innerHTML : '';
 
     /* ============================================================
       [THUB_NR_EDIT_LOAD_JS] — Carica i dati in edit e precompila
       ============================================================ */
-    const EDIT = (window.THUB_EDIT_RECIPE || {});
+    const EDIT = window.THUB_EDIT_RECIPE || {};
     if (EDIT.post_id) {
       // segna l’ID in hidden
-      const hid = document.getElementById('thub_edit_post_id');
-      if (hid) hid.value = String(EDIT.post_id);
+      if (hid) { hid.value = String(EDIT.post_id); }
 
-      // fetch dati
-      const fd = new FormData();
-      fd.append('action','thub_get_recipe_data');
-      fd.append('thub_nr_nonce', form?.dataset?.nonce || '');
-      fd.append('post_id', String(EDIT.post_id));
+      if (ajax) {
+        const fd = new FormData();
+        fd.append('action', 'thub_get_recipe_data');
+        fd.append('thub_nr_nonce', nonce);
+        fd.append('post_id', String(EDIT.post_id));
 
-      fetch(form.dataset.ajaxurl || '', { method:'POST', credentials:'same-origin', body: fd })
-        .then(r=>r.json())
-        .then(j=>{
-          if(!j?.success || !j.data) throw new Error(j?.data?.message||'Errore caricamento dati.');
-          const d = j.data;
+        fetch(ajax, { method:'POST', credentials:'same-origin', body: fd })
+          .then(function(r){ return r.json(); })
+          .then(function(j){
+            if (!j || !j.success || !j.data) {
+              const errMsg = (j && j.data && j.data.message) ? j.data.message : 'Errore caricamento dati.';
+              throw new Error(errMsg);
+            }
+            const d = j.data || {};
 
-          // Campi semplici
-          $('#thub_title')?.value = d.post_title || '';
-          $('#thub_intro')?.value = d.intro_breve || '';
-          const kcal = document.querySelector('input[name="kcal_per_porz"]');
-          if(kcal) kcal.value = d.kcal_per_porz || '';
-          const tp = document.querySelector('input[name="tempo_di_preparazione"]');
-          if(tp) tp.value = d.tempo_di_preparazione || '';
-          const tc = document.querySelector('input[name="tempo_di_cottura"]');
-          if(tc) tc.value = d.tempo_di_cottura || '';
-          const vu = document.querySelector('input[name="video_url"]');
-          if(vu) vu.value = d.video_url || '';
-          const no = document.querySelector('textarea[name="eventuali_note_tecniche"]');
-          if(no) no.value = d.eventuali_note_tecniche || '';
+            const titleInput = $('#thub_title');
+            if (titleInput) { titleInput.value = d.post_title || ''; }
+            const introInput = $('#thub_intro');
+            if (introInput) { introInput.value = d.intro_breve || ''; }
+            const kcal = document.querySelector('input[name="kcal_per_porz"]');
+            if (kcal) { kcal.value = d.kcal_per_porz || ''; }
+            const tp = document.querySelector('input[name="tempo_di_preparazione"]');
+            if (tp) { tp.value = d.tempo_di_preparazione || ''; }
+            const tc = document.querySelector('input[name="tempo_di_cottura"]');
+            if (tc) { tc.value = d.tempo_di_cottura || ''; }
+            const vu = document.querySelector('input[name="video_url"]');
+            if (vu) { vu.value = d.video_url || ''; }
+            const no = document.querySelector('textarea[name="eventuali_note_tecniche"]');
+            if (no) { no.value = d.eventuali_note_tecniche || ''; }
 
-          // Forza destinazione “nonna” e visibilità coerente
-          const rNonna = document.querySelector('input[name="ricetta_dest"][value="nonna"]');
-          if(rNonna) rNonna.checked = true;
-          const visPub = document.querySelector('input[name="nonna_vis"][value="pubblica"]');
-          const visPrv = document.querySelector('input[name="nonna_vis"][value="privata"]');
-          if(d.nonna_vis === 'privata' && visPrv){ visPrv.checked = true; }
-          else if(visPub){ visPub.checked = true; }
+            const rNonna = document.querySelector('input[name="ricetta_dest"][value="nonna"]');
+            if (rNonna) { rNonna.checked = true; }
+            const visPub = document.querySelector('input[name="nonna_vis"][value="pubblica"]');
+            const visPrv = document.querySelector('input[name="nonna_vis"][value="privata"]');
+            if (d.nonna_vis === 'privata' && visPrv) {
+              visPrv.checked = true;
+            } else if (visPub) {
+              visPub.checked = true;
+            }
 
-          // Repeater: INGR (usa template esistente #tpl-ing-row)
-          const ingWrap = document.getElementById('thub-ing-repeater');
-          if(ingWrap){
-            // rimuovi righe attuali
-            $$('.thub-ing-row', ingWrap).forEach(n=>n.remove());
-            const tpl = document.getElementById('tpl-ing-row')?.innerHTML || '';
-            let next = 0;
-            (d.ingredienti||[]).forEach((row)=>{
-              const html = tpl.replaceAll('__i__', String(next));
-              const div  = document.createElement('div');
-              div.className = 'thub-repeater-row thub-ing-row';
-              div.innerHTML = html;
-              ingWrap.insertBefore(div, ingWrap.querySelector('.thub-repeater-ctrl'));
-              // set valori
-              div.querySelector('input[name="ingredienti['+next+'][nome]"]')?.setAttribute('value', row.nome||'');
-              div.querySelector('input[name="ingredienti['+next+'][qta]"]')?.setAttribute('value', row.qta||'');
-              const sel = div.querySelector('select[name="ingredienti['+next+'][unita]"]');
-              if(sel){ sel.value = row.unita || ''; }
-              const oth = div.querySelector('input[name="ingredienti['+next+'][unita_altro]"]');
-              if(oth){ oth.value = row.unita_altro || ''; }
-              next++;
-            });
-            ingWrap.setAttribute('data-next-index', String(next||1));
-          }
+            if (ingWrap && ingTpl) {
+              $$('.thub-ing-row', ingWrap).forEach(function(node){ node.remove(); });
+              let next = 0;
+              (d.ingredienti || []).forEach(function(rawRow){
+                const row = rawRow || {};
+                const html = fillTpl(ingTpl, next);
+                const div  = document.createElement('div');
+                div.className = 'thub-repeater-row thub-ing-row';
+                div.innerHTML = html;
+                ingWrap.insertBefore(div, ingWrap.querySelector('.thub-repeater-ctrl'));
+                const nameInput = div.querySelector('input[name="ingredienti['+next+'][nome]"]');
+                if (nameInput) { nameInput.setAttribute('value', row.nome || ''); }
+                const qtyInput = div.querySelector('input[name="ingredienti['+next+'][qta]"]');
+                if (qtyInput) { qtyInput.setAttribute('value', row.qta || ''); }
+                const unitSelect = div.querySelector('select[name="ingredienti['+next+'][unita]"]');
+                if (unitSelect) { unitSelect.value = row.unita || ''; }
+                const otherInput = div.querySelector('input[name="ingredienti['+next+'][unita_altro]"]');
+                if (otherInput) { otherInput.setAttribute('value', row.unita_altro || ''); }
+                next++;
+              });
+              ingWrap.setAttribute('data-next-index', String(next || 1));
+            }
 
-          // Repeater: ATTREZZATURE (#tpl-tool-row)
-          const toolWrap = document.getElementById('thub-tool-repeater');
-          if(toolWrap){
-            $$('.thub-tool-row', toolWrap).forEach(n=>n.remove());
-            const tpl = document.getElementById('tpl-tool-row')?.innerHTML || '';
-            let next = 0;
-            (d.attrezzature||[]).forEach((row)=>{
-              const html = tpl.replaceAll('__i__', String(next));
-              const div  = document.createElement('div');
-              div.className = 'thub-repeater-row thub-tool-row';
-              div.innerHTML = html;
-              toolWrap.insertBefore(div, toolWrap.querySelector('.thub-repeater-ctrl'));
-              const sel = div.querySelector('select[name="attrezzature['+next+'][key]"]');
-              if(sel){ sel.value = row.key || ''; }
-              div.querySelector('input[name="attrezzature['+next+'][testo]"]')?.setAttribute('value', row.testo||'');
-              next++;
-            });
-            toolWrap.setAttribute('data-next-index', String(next||1));
-          }
+            if (toolWrap && toolTpl) {
+              $$('.thub-tool-row', toolWrap).forEach(function(node){ node.remove(); });
+              let next = 0;
+              (d.attrezzature || []).forEach(function(rawRow){
+                const row = rawRow || {};
+                const html = fillTpl(toolTpl, next);
+                const div  = document.createElement('div');
+                div.className = 'thub-repeater-row thub-tool-row';
+                div.innerHTML = html;
+                toolWrap.insertBefore(div, toolWrap.querySelector('.thub-repeater-ctrl'));
+                const sel = div.querySelector('select[name="attrezzature['+next+'][key]"]');
+                if (sel) { sel.value = row.key || ''; }
+                const textInput = div.querySelector('input[name="attrezzature['+next+'][testo]"]');
+                if (textInput) { textInput.setAttribute('value', row.testo || ''); }
+                next++;
+              });
+              toolWrap.setAttribute('data-next-index', String(next || 1));
+            }
 
-          // Repeater: PASSAGGI (#tpl-step-row)
-          const stWrap = document.getElementById('thub-steps-repeater');
-          if(stWrap){
-            $$('.thub-step-row', stWrap).forEach(n=>n.remove());
-            const tpl = document.getElementById('tpl-step-row')?.innerHTML || '';
-            let next = 1;
-            (d.passaggi||[]).forEach((txt)=>{
-              const html = tpl.replaceAll('__i__', String(next));
-              const div  = document.createElement('div');
-              div.className = 'thub-repeater-row thub-step-row';
-              div.innerHTML = html;
-              stWrap.insertBefore(div, stWrap.querySelector('.thub-repeater-ctrl'));
-              div.querySelector('input[name="passaggi['+next+']"]')?.setAttribute('value', txt||'');
-              next++;
-            });
-            stWrap.setAttribute('data-next-index', String(next||2));
-            $$('.thub-step-idx', stWrap).forEach((el,idx)=> el.textContent = '#'+(idx+1));
-          }
+            if (stWrap && stTpl) {
+              $$('.thub-step-row', stWrap).forEach(function(node){ node.remove(); });
+              let next = 1;
+              (d.passaggi || []).forEach(function(txt){
+                const html = fillTpl(stTpl, next);
+                const div  = document.createElement('div');
+                div.className = 'thub-repeater-row thub-step-row';
+                div.innerHTML = html;
+                stWrap.insertBefore(div, stWrap.querySelector('.thub-repeater-ctrl'));
+                const input = div.querySelector('input[name="passaggi['+next+']"]');
+                if (input) { input.setAttribute('value', txt || ''); }
+                next++;
+              });
+              stWrap.setAttribute('data-next-index', String(next || 2));
+              $$('.thub-step-idx', stWrap).forEach(function(el, idx){ el.textContent = '#'+(idx+1); });
+            }
 
-          // Vini
-          const vn = document.querySelector('input[name="vino_nome"]');
-          if(vn) vn.value = d.vino_nome || '';
-          const vd = document.querySelector('input[name="vino_denominazione"]');
-          if(vd) vd.value = d.vino_denominazione || '';
-        })
-        .catch(err=>{
-          const msg = document.getElementById('thub-nr-msg');
-          if(msg){ msg.textContent = err.message || 'Impossibile caricare i dati della ricetta.'; msg.style.color='#a33'; }
-        });
+            const vn = document.querySelector('input[name="vino_nome"]');
+            if (vn) { vn.value = d.vino_nome || ''; }
+            const vd = document.querySelector('input[name="vino_denominazione"]');
+            if (vd) { vd.value = d.vino_denominazione || ''; }
+          })
+          .catch(function(err){
+            const msgBox = document.getElementById('thub-nr-msg');
+            if (msgBox) {
+              msgBox.textContent = (err && err.message) ? err.message : 'Impossibile caricare i dati della ricetta.';
+              msgBox.style.color = '#a33';
+            }
+          });
+      }
     }
 
     /* ---- Contatori caratteri ---- */
     function bindCounter(id){
-      const el = document.getElementById(id); if(!el) return;
+      const el = document.getElementById(id);
+      if (!el) { return; }
       const cnt = document.querySelector('.thub-count[data-for="'+id+'"]');
-      const rec = parseInt(cnt?.dataset?.rec || '0', 10) || 0;
-      const upd = ()=>{ if(cnt) cnt.textContent = (el.value.length)+'/'+rec; };
-      el.addEventListener('input', upd); upd();
+      const recAttr = (cnt && cnt.dataset) ? cnt.dataset.rec : '0';
+      const rec = parseInt(recAttr || '0', 10) || 0;
+      const upd = function(){ if (cnt) { cnt.textContent = el.value.length + '/' + rec; } };
+      el.addEventListener('input', upd);
+      upd();
     }
-    bindCounter('thub_title'); bindCounter('thub_intro');
+    bindCounter('thub_title');
+    bindCounter('thub_intro');
 
     /* ---- Ingredienti repeater ---- */
-    const ingWrap = document.getElementById('thub-ing-repeater');
-    const ingTpl  = document.getElementById('tpl-ing-row').innerHTML;
-    $('#thub-ing-add')?.addEventListener('click', ()=>{
-      const i = parseInt(ingWrap.getAttribute('data-next-index')||'1',10);
-      const html = ingTpl.replaceAll('__i__', String(i));
-      const div = document.createElement('div');
-      div.className = 'thub-repeater-row thub-ing-row';
-      div.innerHTML = html;
-      ingWrap.insertBefore(div, ingWrap.querySelector('.thub-repeater-ctrl'));
-      ingWrap.setAttribute('data-next-index', String(i+1));
-    });
-    ingWrap?.addEventListener('click', (e)=>{
-      if(e.target.closest('.thub-repeater-remove')){
-        e.target.closest('.thub-repeater-row')?.remove();
-      }
-    });
-    ingWrap?.addEventListener('change', (e)=>{
-      const sel = e.target.closest('select.thub-unit'); if(!sel) return;
-      const wrap = sel.closest('.thub-ing-unitwrap');
-      const other = wrap?.querySelector('.thub-unit-other');
-      const isAltro = (sel.value||'').toLowerCase()==='altro';
-      if(other){ other.style.display = isAltro ? 'block' : 'none'; if(!isAltro) other.value=''; }
-    });
-    $$('select.thub-unit', ingWrap).forEach(sel=>{
-      const wrap = sel.closest('.thub-ing-unitwrap');
-      const other = wrap?.querySelector('.thub-unit-other');
-      if(other) other.style.display = ((sel.value||'').toLowerCase()==='altro') ? 'block':'none';
-    });
+    const addIngBtn = document.getElementById('thub-ing-add');
+    if (addIngBtn && ingWrap && ingTpl) {
+      addIngBtn.addEventListener('click', function(){
+        const i = parseInt(ingWrap.getAttribute('data-next-index') || '1', 10);
+        const html = fillTpl(ingTpl, i);
+        if (!html) { return; }
+        const div = document.createElement('div');
+        div.className = 'thub-repeater-row thub-ing-row';
+        div.innerHTML = html;
+        ingWrap.insertBefore(div, ingWrap.querySelector('.thub-repeater-ctrl'));
+        ingWrap.setAttribute('data-next-index', String(i + 1));
+      });
+    }
+    if (ingWrap) {
+      ingWrap.addEventListener('click', function(e){
+        const removeBtn = e.target.closest('.thub-repeater-remove');
+        if (removeBtn) {
+          const row = removeBtn.closest('.thub-repeater-row');
+          if (row) { row.remove(); }
+        }
+      });
+      ingWrap.addEventListener('change', function(e){
+        const sel = e.target.closest('select.thub-unit');
+        if (!sel) { return; }
+        const wrap = sel.closest('.thub-ing-unitwrap');
+        const other = wrap ? wrap.querySelector('.thub-unit-other') : null;
+        const isAltro = (sel.value || '').toLowerCase() === 'altro';
+        if (other) {
+          other.style.display = isAltro ? 'block' : 'none';
+          if (!isAltro) { other.value = ''; }
+        }
+      });
+      $$('.thub-ing-row select.thub-unit', ingWrap).forEach(function(sel){
+        const wrap = sel.closest('.thub-ing-unitwrap');
+        const other = wrap ? wrap.querySelector('.thub-unit-other') : null;
+        const isAltro = (sel.value || '').toLowerCase() === 'altro';
+        if (other) {
+          other.style.display = isAltro ? 'block' : 'none';
+        }
+      });
+    }
 
     /* ---- Attrezzature repeater ---- */
-    const toolWrap = document.getElementById('thub-tool-repeater');
-    const toolTpl  = document.getElementById('tpl-tool-row').innerHTML;
-    $('#thub-tool-add')?.addEventListener('click', ()=>{
-      const i = parseInt(toolWrap.getAttribute('data-next-index')||'1',10);
-      const html = toolTpl.replaceAll('__i__', String(i));
-      const div = document.createElement('div');
-      div.className = 'thub-repeater-row thub-tool-row';
-      div.innerHTML = html;
-      toolWrap.insertBefore(div, toolWrap.querySelector('.thub-repeater-ctrl'));
-      toolWrap.setAttribute('data-next-index', String(i+1));
-    });
-    toolWrap?.addEventListener('click', (e)=>{
-      if(e.target.closest('.thub-repeater-remove')){
-        e.target.closest('.thub-repeater-row')?.remove();
-      }
-    });
+    const addToolBtn = document.getElementById('thub-tool-add');
+    if (addToolBtn && toolWrap && toolTpl) {
+      addToolBtn.addEventListener('click', function(){
+        const i = parseInt(toolWrap.getAttribute('data-next-index') || '1', 10);
+        const html = fillTpl(toolTpl, i);
+        if (!html) { return; }
+        const div = document.createElement('div');
+        div.className = 'thub-repeater-row thub-tool-row';
+        div.innerHTML = html;
+        toolWrap.insertBefore(div, toolWrap.querySelector('.thub-repeater-ctrl'));
+        toolWrap.setAttribute('data-next-index', String(i + 1));
+      });
+    }
+    if (toolWrap) {
+      toolWrap.addEventListener('click', function(e){
+        const removeBtn = e.target.closest('.thub-repeater-remove');
+        if (removeBtn) {
+          const row = removeBtn.closest('.thub-repeater-row');
+          if (row) { row.remove(); }
+        }
+      });
+    }
 
     /* ---- Passaggi repeater ---- */
-    const stWrap = document.getElementById('thub-steps-repeater');
-    const stTpl  = document.getElementById('tpl-step-row').innerHTML;
-    $('#thub-step-add')?.addEventListener('click', ()=>{
-      const i = parseInt(stWrap.getAttribute('data-next-index')||'2',10);
-      const html = stTpl.replaceAll('__i__', String(i));
-      const div = document.createElement('div');
-      div.className = 'thub-repeater-row thub-step-row';
-      div.innerHTML = html;
-      stWrap.insertBefore(div, stWrap.querySelector('.thub-repeater-ctrl'));
-      stWrap.setAttribute('data-next-index', String(i+1));
-      $$('.thub-step-idx', stWrap).forEach((el,idx)=> el.textContent = '#'+(idx+1));
-    });
-    stWrap?.addEventListener('click', (e)=>{
-      if(e.target.closest('.thub-repeater-remove')){
-        e.target.closest('.thub-repeater-row')?.remove();
-        $$('.thub-step-idx', stWrap).forEach((el,idx)=> el.textContent = '#'+(idx+1));
-      }
-    });
+    const addStepBtn = document.getElementById('thub-step-add');
+    if (addStepBtn && stWrap && stTpl) {
+      addStepBtn.addEventListener('click', function(){
+        const i = parseInt(stWrap.getAttribute('data-next-index') || '2', 10);
+        const html = fillTpl(stTpl, i);
+        if (!html) { return; }
+        const div = document.createElement('div');
+        div.className = 'thub-repeater-row thub-step-row';
+        div.innerHTML = html;
+        stWrap.insertBefore(div, stWrap.querySelector('.thub-repeater-ctrl'));
+        stWrap.setAttribute('data-next-index', String(i + 1));
+        $$('.thub-step-idx', stWrap).forEach(function(el, idx){ el.textContent = '#'+(idx+1); });
+      });
+    }
+    if (stWrap) {
+      stWrap.addEventListener('click', function(e){
+        const removeBtn = e.target.closest('.thub-repeater-remove');
+        if (removeBtn) {
+          const row = removeBtn.closest('.thub-repeater-row');
+          if (row) { row.remove(); }
+          $$('.thub-step-idx', stWrap).forEach(function(el, idx){ el.textContent = '#'+(idx+1); });
+        }
+      });
+    }
 
     /* ---- Toggle Nonna ---- */
-    form.addEventListener('change', (e)=>{
-      if(e.target.name==='ricetta_dest'){
+    form.addEventListener('change', function(e){
+      if (e.target && e.target.name === 'ricetta_dest') {
         const box = document.getElementById('thub-nonna-sub');
-        box.style.display = (e.target.value==='nonna') ? 'block' : 'none';
+        if (box) {
+          box.style.display = (e.target.value === 'nonna') ? 'block' : 'none';
+        }
       }
     });
 
     /* ---- Validazione client ---- */
     function validate(){
-      let ok = true, errs = [];
-      const req = (sel,label)=>{
-        const el = $(sel); if(!el) return;
-        const v = (el.value||'').trim();
-        if(!v){ el.classList.add('is-error'); ok=false; errs.push(label+' mancante'); }
-        else   el.classList.remove('is-error');
+      let ok = true;
+      const errs = [];
+      const req = function(sel, label){
+        const el = $(sel);
+        if (!el) { return; }
+        const v = (el.value || '').trim();
+        if (!v) {
+          el.classList.add('is-error');
+          ok = false;
+          errs.push(label + ' mancante');
+        } else {
+          el.classList.remove('is-error');
+        }
       };
-      req('#thub_title','Titolo');
-      req('#thub_intro','Descrizione');
-      req('input[name="tempo_di_preparazione"]','Tempo di preparazione');
-      req('input[name="tempo_di_cottura"]','Tempo di cottura');
+      req('#thub_title', 'Titolo');
+      req('#thub_intro', 'Descrizione');
+      req('input[name="tempo_di_preparazione"]', 'Tempo di preparazione');
+      req('input[name="tempo_di_cottura"]', 'Tempo di cottura');
 
       const fi = $('input[name="thub_recipe_image"]');
-      if(fi && !(fi.files && fi.files.length>0)){ ok=false; errs.push('Immagine della ricetta mancante'); fi.classList.add('is-error'); }
-      else if(fi){ fi.classList.remove('is-error'); }
+      if (fi) {
+        const hasFile = fi.files && fi.files.length > 0;
+        if (!hasFile) {
+          ok = false;
+          errs.push('Immagine della ricetta mancante');
+          fi.classList.add('is-error');
+        } else {
+          fi.classList.remove('is-error');
+        }
+      }
 
       const ingRows = $$('.thub-ing-row');
-      const ingFilled = ingRows.filter(r=> (r.querySelector('input[name*="[nome]"]')?.value||'').trim() !== '');
-      if(ingFilled.length < 1){ ok=false; errs.push('Inserisci almeno 1 ingrediente'); }
+      const ingFilled = ingRows.filter(function(r){
+        const input = r.querySelector('input[name*="[nome]"]');
+        const val = input && input.value ? input.value.trim() : '';
+        return val !== '';
+      });
+      if (ingFilled.length < 1) {
+        ok = false;
+        errs.push('Inserisci almeno 1 ingrediente');
+      }
 
       const toolRows = $$('.thub-tool-row');
-      const toolFilled = toolRows.filter(r=> (r.querySelector('select[name*="[key]"]')?.value||'') !== '');
-      if(toolFilled.length < 1){ ok=false; errs.push('Inserisci almeno 1 attrezzatura'); }
+      const toolFilled = toolRows.filter(function(r){
+        const sel = r.querySelector('select[name*="[key]"]');
+        const val = sel && sel.value ? sel.value : '';
+        return val !== '';
+      });
+      if (toolFilled.length < 1) {
+        ok = false;
+        errs.push('Inserisci almeno 1 attrezzatura');
+      }
 
       const stepRows = $$('.thub-step-row');
-      const stepFilled = stepRows.filter(r=> (r.querySelector('input[name^="passaggi"]')?.value||'').trim() !== '');
-      if(stepFilled.length < 3){ ok=false; errs.push('Inserisci almeno 3 passaggi'); }
+      const stepFilled = stepRows.filter(function(r){
+        const input = r.querySelector('input[name^="passaggi"]');
+        const val = input && input.value ? input.value.trim() : '';
+        return val !== '';
+      });
+      if (stepFilled.length < 3) {
+        ok = false;
+        errs.push('Inserisci almeno 3 passaggi');
+      }
 
-      if(!ok){ msg.textContent = errs.join(' • '); msg.style.color = '#a33'; }
+      if (!ok && msg) {
+        msg.textContent = errs.join(' • ');
+        msg.style.color = '#a33';
+      }
       return ok;
     }
 
     /* ---- Submit ---- */
-    $('#thub_btn_draft')?.addEventListener('click', ()=> submit('draft'));
-    $('#thub_btn_publish')?.addEventListener('click', ()=> submit('publish'));
+    const btnDraft = document.getElementById('thub_btn_draft');
+    if (btnDraft) {
+      btnDraft.addEventListener('click', function(){ submit('draft'); });
+    }
+    const btnPublish = document.getElementById('thub_btn_publish');
+    if (btnPublish) {
+      btnPublish.addEventListener('click', function(){ submit('publish'); });
+    }
 
     function submit(type){
-      if(!validate()) return;
+      if (!validate()) { return; }
 
-      $('#thub_submit_type').value = (type==='publish') ? 'publish' : 'draft';
-      msg.textContent = 'Salvataggio in corso...'; msg.style.color = '#444';
+      if (submitTypeField) {
+        submitTypeField.value = (type === 'publish') ? 'publish' : 'draft';
+      }
+      if (msg) {
+        msg.textContent = 'Salvataggio in corso...';
+        msg.style.color = '#444';
+      }
 
       const fd = new FormData(form);
       fd.set('thub_nr_nonce', nonce);
       fd.set('action', 'thub_save_user_recipe');
 
-      if(!isPro && fd.get('ricetta_dest')==='chef'){ fd.set('ricetta_dest', 'nonna'); }
+      if (!isPro && fd.get('ricetta_dest') === 'chef') {
+        fd.set('ricetta_dest', 'nonna');
+      }
 
-      fetch(ajax, { method:'POST', credentials:'same-origin', body:fd })
-      .then(r=>r.json())
-      .then(j=>{
-        if(j?.success){
-          msg.textContent = j.message || 'Salvato con successo.'; msg.style.color = '#2a7a2a';
-          if(j.redirect){ window.location.href = j.redirect; }
-        } else {
-          msg.textContent = j?.message || 'Si è verificato un errore.'; msg.style.color = '#a33';
+      if (!ajax) {
+        if (msg) {
+          msg.textContent = 'Endpoint non disponibile.';
+          msg.style.color = '#a33';
         }
-      })
-      .catch(()=>{ msg.textContent = 'Errore di rete.'; msg.style.color = '#a33'; });
+        return;
+      }
+
+      fetch(ajax, { method:'POST', credentials:'same-origin', body: fd })
+        .then(function(r){ return r.json(); })
+        .then(function(j){
+          if (j && j.success) {
+            if (msg) {
+              msg.textContent = j.message || 'Salvato con successo.';
+              msg.style.color = '#2a7a2a';
+            }
+            if (j && j.redirect) {
+              window.location.href = j.redirect;
+            }
+          } else {
+            if (msg) {
+              msg.textContent = (j && j.message) ? j.message : 'Si è verificato un errore.';
+              msg.style.color = '#a33';
+            }
+          }
+        })
+        .catch(function(){
+          if (msg) {
+            msg.textContent = 'Errore di rete.';
+            msg.style.color = '#a33';
+          }
+        });
     }
   })();
   </script>
