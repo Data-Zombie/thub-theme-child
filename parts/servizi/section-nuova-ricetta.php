@@ -13,6 +13,24 @@ $nr_nonce = wp_create_nonce('thub_save_user_recipe');
 $user_id  = get_current_user_id();
 $is_pro   = function_exists('thub_is_pro') ? thub_is_pro($user_id) : false;
 ?>
+
+<?php
+/* [THUB_NR_EDIT_MODE] — Riconosce ?post_id=&mode=edit e valida autore */
+$edit_post_id = 0;
+if ( isset($_GET['post_id'], $_GET['mode']) && $_GET['mode'] === 'edit' ) {
+  $pid = absint($_GET['post_id']);
+  if ( $pid && get_post_type($pid) === 'ricetta' && (int) get_post_field('post_author', $pid) === (int) $user_id ) {
+    $edit_post_id = $pid;
+  }
+}
+?>
+<script>
+  /* [THUB_NR_EDIT_BOOT] — espone al JS l’eventuale post da caricare */
+  window.THUB_EDIT_RECIPE = {
+    post_id: <?php echo (int) $edit_post_id; ?> 
+  };
+</script>
+
 <section class="thub-canvas-section thub-nr">
 
   <header class="thub-nr__head">
@@ -32,6 +50,7 @@ $is_pro   = function_exists('thub_is_pro') ? thub_is_pro($user_id) : false;
     <input type="hidden" name="action" value="thub_save_user_recipe">
     <input type="hidden" name="thub_nr_nonce" value="<?php echo esc_attr($nr_nonce); ?>">
     <input type="hidden" name="thub_submit_type" id="thub_submit_type" value="draft"><!-- draft|publish -->
+    <input type="hidden" name="edit_post_id" id="thub_edit_post_id" value="<?php echo esc_attr($edit_post_id); ?>"><!-- [THUB_NR_EDIT_HIDDEN] -->
 
     <!-- ======================= BOX 1 ======================= -->
     <div class="thub-box thub-box--full">
@@ -429,6 +448,8 @@ $is_pro   = function_exists('thub_is_pro') ? thub_is_pro($user_id) : false;
     }
     /* richiesta specifica: per i text usa #e1e1e6 */
     .thub-input[type="text"]{ border-color:#e1e1e6; }
+    .thub-input[type="number"]{ border-color:#e1e1e6; }
+    .thub-input[type="url"]{ border-color:#e1e1e6; }
 
     /* Porzioni base “non cliccabile” già ok; confermo */
     .thub-input--ro{ border:0 !important; background:#f7f7f9 !important; color:#777; }
@@ -513,6 +534,125 @@ $is_pro   = function_exists('thub_is_pro') ? thub_is_pro($user_id) : false;
 
     const $  = (s,c=document)=>c.querySelector(s);
     const $$ = (s,c=document)=>Array.from(c.querySelectorAll(s));
+
+    /* ============================================================
+      [THUB_NR_EDIT_LOAD_JS] — Carica i dati in edit e precompila
+      ============================================================ */
+    const EDIT = (window.THUB_EDIT_RECIPE || {});
+    if (EDIT.post_id) {
+      // segna l’ID in hidden
+      const hid = document.getElementById('thub_edit_post_id');
+      if (hid) hid.value = String(EDIT.post_id);
+
+      // fetch dati
+      const fd = new FormData();
+      fd.append('action','thub_get_recipe_data');
+      fd.append('thub_nr_nonce', form?.dataset?.nonce || '');
+      fd.append('post_id', String(EDIT.post_id));
+
+      fetch(form.dataset.ajaxurl || '', { method:'POST', credentials:'same-origin', body: fd })
+        .then(r=>r.json())
+        .then(j=>{
+          if(!j?.success || !j.data) throw new Error(j?.data?.message||'Errore caricamento dati.');
+          const d = j.data;
+
+          // Campi semplici
+          $('#thub_title')?.value = d.post_title || '';
+          $('#thub_intro')?.value = d.intro_breve || '';
+          const kcal = document.querySelector('input[name="kcal_per_porz"]');
+          if(kcal) kcal.value = d.kcal_per_porz || '';
+          const tp = document.querySelector('input[name="tempo_di_preparazione"]');
+          if(tp) tp.value = d.tempo_di_preparazione || '';
+          const tc = document.querySelector('input[name="tempo_di_cottura"]');
+          if(tc) tc.value = d.tempo_di_cottura || '';
+          const vu = document.querySelector('input[name="video_url"]');
+          if(vu) vu.value = d.video_url || '';
+          const no = document.querySelector('textarea[name="eventuali_note_tecniche"]');
+          if(no) no.value = d.eventuali_note_tecniche || '';
+
+          // Forza destinazione “nonna” e visibilità coerente
+          const rNonna = document.querySelector('input[name="ricetta_dest"][value="nonna"]');
+          if(rNonna) rNonna.checked = true;
+          const visPub = document.querySelector('input[name="nonna_vis"][value="pubblica"]');
+          const visPrv = document.querySelector('input[name="nonna_vis"][value="privata"]');
+          if(d.nonna_vis === 'privata' && visPrv){ visPrv.checked = true; }
+          else if(visPub){ visPub.checked = true; }
+
+          // Repeater: INGR (usa template esistente #tpl-ing-row)
+          const ingWrap = document.getElementById('thub-ing-repeater');
+          if(ingWrap){
+            // rimuovi righe attuali
+            $$('.thub-ing-row', ingWrap).forEach(n=>n.remove());
+            const tpl = document.getElementById('tpl-ing-row')?.innerHTML || '';
+            let next = 0;
+            (d.ingredienti||[]).forEach((row)=>{
+              const html = tpl.replaceAll('__i__', String(next));
+              const div  = document.createElement('div');
+              div.className = 'thub-repeater-row thub-ing-row';
+              div.innerHTML = html;
+              ingWrap.insertBefore(div, ingWrap.querySelector('.thub-repeater-ctrl'));
+              // set valori
+              div.querySelector('input[name="ingredienti['+next+'][nome]"]')?.setAttribute('value', row.nome||'');
+              div.querySelector('input[name="ingredienti['+next+'][qta]"]')?.setAttribute('value', row.qta||'');
+              const sel = div.querySelector('select[name="ingredienti['+next+'][unita]"]');
+              if(sel){ sel.value = row.unita || ''; }
+              const oth = div.querySelector('input[name="ingredienti['+next+'][unita_altro]"]');
+              if(oth){ oth.value = row.unita_altro || ''; }
+              next++;
+            });
+            ingWrap.setAttribute('data-next-index', String(next||1));
+          }
+
+          // Repeater: ATTREZZATURE (#tpl-tool-row)
+          const toolWrap = document.getElementById('thub-tool-repeater');
+          if(toolWrap){
+            $$('.thub-tool-row', toolWrap).forEach(n=>n.remove());
+            const tpl = document.getElementById('tpl-tool-row')?.innerHTML || '';
+            let next = 0;
+            (d.attrezzature||[]).forEach((row)=>{
+              const html = tpl.replaceAll('__i__', String(next));
+              const div  = document.createElement('div');
+              div.className = 'thub-repeater-row thub-tool-row';
+              div.innerHTML = html;
+              toolWrap.insertBefore(div, toolWrap.querySelector('.thub-repeater-ctrl'));
+              const sel = div.querySelector('select[name="attrezzature['+next+'][key]"]');
+              if(sel){ sel.value = row.key || ''; }
+              div.querySelector('input[name="attrezzature['+next+'][testo]"]')?.setAttribute('value', row.testo||'');
+              next++;
+            });
+            toolWrap.setAttribute('data-next-index', String(next||1));
+          }
+
+          // Repeater: PASSAGGI (#tpl-step-row)
+          const stWrap = document.getElementById('thub-steps-repeater');
+          if(stWrap){
+            $$('.thub-step-row', stWrap).forEach(n=>n.remove());
+            const tpl = document.getElementById('tpl-step-row')?.innerHTML || '';
+            let next = 1;
+            (d.passaggi||[]).forEach((txt)=>{
+              const html = tpl.replaceAll('__i__', String(next));
+              const div  = document.createElement('div');
+              div.className = 'thub-repeater-row thub-step-row';
+              div.innerHTML = html;
+              stWrap.insertBefore(div, stWrap.querySelector('.thub-repeater-ctrl'));
+              div.querySelector('input[name="passaggi['+next+']"]')?.setAttribute('value', txt||'');
+              next++;
+            });
+            stWrap.setAttribute('data-next-index', String(next||2));
+            $$('.thub-step-idx', stWrap).forEach((el,idx)=> el.textContent = '#'+(idx+1));
+          }
+
+          // Vini
+          const vn = document.querySelector('input[name="vino_nome"]');
+          if(vn) vn.value = d.vino_nome || '';
+          const vd = document.querySelector('input[name="vino_denominazione"]');
+          if(vd) vd.value = d.vino_denominazione || '';
+        })
+        .catch(err=>{
+          const msg = document.getElementById('thub-nr-msg');
+          if(msg){ msg.textContent = err.message || 'Impossibile caricare i dati della ricetta.'; msg.style.color='#a33'; }
+        });
+    }
 
     /* ---- Contatori caratteri ---- */
     function bindCounter(id){
