@@ -534,6 +534,7 @@ if ( isset($_GET['post_id'], $_GET['mode']) && $_GET['mode'] === 'edit' ) {
     const isPro = !!(form.dataset && form.dataset.isPro === '1');
     const msg   = document.getElementById('thub-nr-msg');
     const submitTypeField = document.getElementById('thub_submit_type');
+    const hid   = document.getElementById('thub_edit_post_id');
 
     const $  = (s, c)=> (c || document).querySelector(s);
     const $$ = (s, c)=> Array.from((c || document).querySelectorAll(s));
