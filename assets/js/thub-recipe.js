@@ -147,11 +147,11 @@
   })();
 
   /* ============================================================
-   * [THUB_GATING_ACTIONS] Print/Share con lock tooltip
+   * [THUB_GATING_ACTIONS_SELECTORS] supporta markup legacy (.ricetta-actions, .btn-print/.btn-share)
    * ============================================================ */
-  $$('.thub-actions .thub-btn').forEach(btn=>{
+  $$('.thub-actions .thub-btn, .ricetta-actions .thub-btn, .thub-actions .btn-print, .thub-actions .btn-share, .ricetta-actions .btn-print, .ricetta-actions .btn-share').forEach(btn=>{
     const locked  = btn.classList.contains('is-locked');
-    const isPrint = btn.classList.contains('thub-btn--print');
+    const isPrint = btn.classList.contains('thub-btn--print') || btn.classList.contains('btn-print');
 
     if (!locked && isPrint) {
       btn.addEventListener('click', ()=> window.print());
@@ -168,9 +168,10 @@
 })();
 
 /* ============================================================
-   [THUB_TTS_PLAY] — Lettura vocale ricetta
+   [THUB_TTS_PLAY] — Lettura vocale ricetta (rev-safe)
    - Bottone: .thub-tts-btn
    - Testo:   [data-ricetta-tts]
+   - Note: onend legato all’ULTIMO utterance; nessun listener globale
    ============================================================ */
 (function(){
   const btn = document.querySelector('.thub-tts-btn');
@@ -187,8 +188,9 @@
     btn.classList.toggle('is-on', !!isOn);
   };
 
+  // [THUB_TTS_SPLIT] separa titolo/ingredienti/passaggi da [data-ricetta-tts]
   const splitSections = (txt) => {
-    const t = txt.trim();
+    const t = (txt || '').trim();
     const parts = { title: '', ing: '', steps: '' };
     const mIng = t.indexOf('Ingredienti:');
     const mPas = t.indexOf('Passaggi:');
@@ -212,30 +214,37 @@
     return parts;
   };
 
-  const speakQueue = (texts) => {
-    const { speechSynthesis: synth } = window;
-    synth.cancel();
-
-    const enqueue = (text, rate=0.98) => {
-      if(!text) return;
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'it-IT';
-      u.rate = rate;
-      synth.speak(u);
-    };
-
-    enqueue(texts.title);
-    if(texts.ing)   enqueue('Ingredienti: ' + texts.ing, 0.96);
-    if(texts.steps) enqueue('Passaggi: ' + texts.steps,  0.98);
-  };
-
+  // [THUB_TTS_END] chiusura stato al termine o alla cancellazione
   const onEndOrStop = () => {
     speaking = false;
     setState(false);
   };
-  window.speechSynthesis.addEventListener('end', onEndOrStop);
+
+  // Uscendo dalla pagina fermiamo eventuale coda vocale
   window.addEventListener('beforeunload', () => window.speechSynthesis.cancel());
 
+  // [THUB_TTS_SPEAK] parla in coda; onend sull’ultimo utterance
+  const speakQueue = (texts) => {
+    const { speechSynthesis: synth } = window;
+    synth.cancel(); // pulizia coda precedente
+
+    const queue = [];
+    if (texts.title) queue.push({ t: texts.title, r: 0.98 });
+    if (texts.ing)   queue.push({ t: 'Ingredienti: ' + texts.ing, r: 0.96 });
+    if (texts.steps) queue.push({ t: 'Passaggi: ' + texts.steps,  r: 0.98 });
+
+    queue.forEach((item, i) => {
+      const u = new SpeechSynthesisUtterance(item.t);
+      u.lang = 'it-IT';
+      u.rate = item.r;
+      if (i === queue.length - 1) { // ultimo pezzo → ripristina stato al termine
+        u.onend = onEndOrStop; // [THUB_TTS_ONEND_FIX]
+      }
+      synth.speak(u);
+    });
+  };
+
+  // [THUB_TTS_CLICK] toggle lettura
   btn.addEventListener('click', () => {
     const text = (src.textContent || '').trim();
     if(!text) return;
@@ -249,5 +258,60 @@
       window.speechSynthesis.cancel();
       onEndOrStop();
     }
+  });
+})();
+
+/* ============================================================
+ * [THUB_FAV_TOGGLE_JS] Gestione click “Preferiti” (AJAX)
+ * ============================================================ */
+(function(){
+  'use strict';
+  const on = (el, ev, fn)=> el && el.addEventListener(ev, fn, false);
+  const qs = (s, c)=> (c||document).querySelector(s);
+
+  on(document, 'click', function(ev){
+    const btn = ev.target.closest && ev.target.closest('.thub-btn--fav');
+    if(!btn) return;
+
+    const ajax  = btn.getAttribute('data-ajax');
+    const nonce = btn.getAttribute('data-nonce');
+    const pid   = btn.getAttribute('data-post');
+    const login = btn.getAttribute('data-login-url') || '/login';
+    const now   = window.location.href;
+
+    // Disabilita momentaneamente per evitare doppio click
+    btn.disabled = true;
+
+    // Chiamata AJAX
+    const fd = new FormData();
+    fd.append('action','thub_toggle_favorite');
+    fd.append('nonce', nonce);
+    fd.append('post_id', pid);
+    fd.append('redirect_to', now);
+
+    fetch(ajax, { method:'POST', credentials:'same-origin', body: fd })
+      .then(r => r.json().catch(()=>({success:false})).then(data => ({ok:r.ok, status:r.status, data})))
+      .then(({ok, status, data})=>{
+        if(!ok){
+          // Non loggato → redirect al login
+          if (data && data.data && data.data.code === 'not_logged' && data.data.login_url){
+            window.location.href = data.data.login_url;
+            return;
+          }
+          // Altro errore: ripristina e esci
+          btn.disabled = false;
+          return;
+        }
+        // Successo: toggle UI
+        const added = data.data && data.data.status === 'added';
+        btn.setAttribute('aria-pressed', added ? 'true' : 'false');
+        btn.classList.toggle('is-on', added);
+        const lab = qs('.thub-fav-label', btn);
+        if(lab) lab.textContent = added ? 'Salvata' : 'Salva';
+        btn.disabled = false;
+      })
+      .catch(()=>{
+        btn.disabled = false;
+      });
   });
 })();

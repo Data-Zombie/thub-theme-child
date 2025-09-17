@@ -145,3 +145,38 @@ body.thub-theme-dark .ricetta-title .thub-tts-btn--inline:hover{
   outline: 2px solid var(--violet);
   outline-offset: 2px;
 }
+
+/* ============================================================
+   [THUB_FAV_TOGGLE_CSS] Stile pulsante Preferiti accanto a Stampa/Condividi
+   - Allineato alla famiglia .thub-btn esistente, con lieve evidenza quando attivo
+   ============================================================ */
+
+.thub-actions .thub-btn--fav{
+  display:inline-flex; align-items:center; gap:.35rem;
+  border:1px solid var(--violet, #7249a4); color:var(--violet, #7249a4);
+  background:#fff; border-radius:.6rem;
+  padding:.45rem .6rem; line-height:1; cursor:pointer;
+}
+.thub-actions .thub-btn--fav:hover{ background:#f7f5fb; }
+.thub-actions .thub-btn--fav[aria-pressed="true"],
+.thub-actions .thub-btn--fav.is-on{
+  background:#f2eef7;
+}
+.thub-actions .thub-btn--fav svg{ width:18px; height:18px; display:block; }
+
+/* [THUB_FAV_ALIAS] allinea .btn-fav ai bottoni azione esistenti */
+.ricetta-actions .btn-fav{
+  display:inline-flex; align-items:center; gap:.35rem;
+  border:1px solid var(--violet,#7249a4); color:var(--violet,#7249a4);
+  background:#fff; border-radius:.6rem;
+  padding:.45rem .6rem; line-height:1; cursor:pointer;
+}
+.ricetta-actions .btn-fav:hover{ background:#f7f5fb; }
+.ricetta-actions .btn-fav[aria-pressed="true"], .ricetta-actions .btn-fav.is-on{ background:#f2eef7; }
+
+/* [THUB_LOCK_TOOLTIP_ALIAS] supporta anche container legacy */
+.ricetta-actions .is-locked.show-tip::after{
+  content: attr(data-thub-tooltip);
+  position:absolute; top:-32px; left:50%; transform:translateX(-50%);
+  background:#111; color:#fff; font-size:.8rem; padding:4px 8px; border-radius:6px; white-space:nowrap;
+}

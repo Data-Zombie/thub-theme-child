@@ -3200,9 +3200,8 @@ if ( ! function_exists('thub_save_user_recipe_handler') ) {
     $edit_post_id = isset($_POST['edit_post_id']) ? absint($_POST['edit_post_id']) : 0;
     $can_update   = 0;
     if ( $edit_post_id && get_post_type($edit_post_id) === 'ricetta' ) {
-      $is_author      = (int) get_post_field('post_author', $edit_post_id) === (int) $user_id;
-      $can_edit_post  = current_user_can('edit_post', $edit_post_id);
-      if ( $is_author || $can_edit_post ) {
+      $is_author = (int) get_post_field('post_author', $edit_post_id) === (int) $user_id;
+      if ( $is_author && current_user_can('edit_post', $edit_post_id) ) {
         $can_update = $edit_post_id;
       }
     }
@@ -3434,8 +3433,7 @@ add_action('wp_ajax_thub_get_recipe_data', function(){
   if ( ! $pid || get_post_type($pid) !== 'ricetta' ) {
     wp_send_json_error([ 'message' => 'ID ricetta non valido.' ], 400);
   }
-  $is_author = (int) get_post_field('post_author', $pid) === (int) get_current_user_id();
-  if ( ! $is_author && ! current_user_can('edit_post', $pid) ) {
+  if ( ! current_user_can('edit_post', $pid) || (int) get_post_field('post_author', $pid) !== (int) get_current_user_id() ) {
     wp_send_json_error([ 'message' => 'Permessi insufficienti.' ], 403);
   }
 
@@ -3504,6 +3502,42 @@ add_action('wp_ajax_thub_get_recipe_data', function(){
     $vino_den  = (string) ($vini[0]['vino_denominazione'] ?? '');
   }
 
+  $featured = null;
+  $thumb_id = get_post_thumbnail_id($pid);
+  if ($thumb_id) {
+    $sizes = [ 'medium_large', 'large', 'medium', 'full' ];
+    $src   = null;
+    foreach ($sizes as $size) {
+      $candidate = wp_get_attachment_image_src($thumb_id, $size);
+      if (is_array($candidate)) {
+        $src = $candidate;
+        break;
+      }
+    }
+    if (!is_array($src)) {
+      $url = wp_get_attachment_url($thumb_id);
+      if ($url) {
+        $src = [ $url, 0, 0 ];
+      }
+    }
+    if ($src) {
+      $meta   = wp_get_attachment_metadata($thumb_id);
+      $width  = isset($src[1]) && $src[1] ? (int) $src[1] : (int) ($meta['width'] ?? 0);
+      $height = isset($src[2]) && $src[2] ? (int) $src[2] : (int) ($meta['height'] ?? 0);
+      $alt    = get_post_meta($thumb_id, '_wp_attachment_image_alt', true);
+      if ($alt === '') {
+        $alt = get_the_title($thumb_id) ?: '';
+      }
+      $featured = [
+        'id'     => (int) $thumb_id,
+        'url'    => (string) $src[0],
+        'width'  => $width,
+        'height' => $height,
+        'alt'    => (string) $alt,
+      ];
+    }
+  }
+
   wp_send_json_success([
     'post_id'                  => $pid,
     'post_title'               => $title,
@@ -3519,6 +3553,7 @@ add_action('wp_ajax_thub_get_recipe_data', function(){
     'passaggi'                 => $passaggi,
     'vino_nome'                => $vino_nome,
     'vino_denominazione'       => $vino_den,
+    'featured_image'           => $featured,
   ]);
 });
 
@@ -3551,8 +3586,7 @@ add_action('wp_ajax_thub_toggle_recipe_visibility', function(){
   }
 
   // Permessi: autore o chi può editare il post
-  $is_author = (int) get_post_field('post_author', $post_id) === (int) $user_id;
-  if ( ! $is_author && ! current_user_can('edit_post', $post_id) ) {
+  if ( ! current_user_can('edit_post', $post_id) || (int) get_post_field('post_author', $post_id) !== (int) $user_id ) {
     wp_send_json_error([ 'message' => 'Permessi insufficienti.' ], 403);
   }
 
@@ -3575,6 +3609,79 @@ add_action('wp_ajax_thub_toggle_recipe_visibility', function(){
   wp_send_json_success([ 'post_id' => $post_id, 'to' => $to ]);
 });
 
+/* ============================================================
+ * [THUB_FAV_HELPERS] Helper preferiti utente
+ * - Meta: user_meta 'thub_saved_recipes' (array di ID post)
+ * ============================================================ */
+if ( ! defined('THUB_FAV_META') ) {
+  define('THUB_FAV_META', 'thub_saved_recipes'); // [THUB_FAV_META]
+}
+
+if ( ! function_exists('thub_get_saved_recipes_for_user') ) {
+  /** Ritorna array di ID ricetta salvati dall'utente */
+  function thub_get_saved_recipes_for_user( $user_id ){
+    $arr = (array) get_user_meta( $user_id, THUB_FAV_META, true );
+    $arr = array_values( array_unique( array_filter( array_map('intval', $arr) ) ) );
+    return $arr;
+  }
+}
+
+if ( ! function_exists('thub_is_recipe_saved_by_user') ) {
+  /** True se l'utente ha già salvato la ricetta */
+  function thub_is_recipe_saved_by_user( $user_id, $post_id ){
+    if ( ! $user_id || ! $post_id ) return false;
+    $arr = thub_get_saved_recipes_for_user( $user_id );
+    return in_array( (int) $post_id, $arr, true );
+  }
+}
+
+/* ============================================================
+ * [THUB_FAV_TOGGLE_AJAX] Toggle preferiti (add/remove)
+ * - action: thub_toggle_favorite (anche nopriv → redirect al login)
+ * - POST: post_id, nonce ('thub_fav_toggle'), redirect_to (opzionale)
+ * - Ritorna: {success:true,status:'added'|'removed',count:int}
+ *            {success:false,code:'not_logged',login_url:...}
+ * ============================================================ */
+add_action('wp_ajax_thub_toggle_favorite', 'thub_toggle_favorite_ajax');
+add_action('wp_ajax_nopriv_thub_toggle_favorite', 'thub_toggle_favorite_ajax');
+
+if ( ! function_exists('thub_toggle_favorite_ajax') ) {
+  function thub_toggle_favorite_ajax(){
+    // Nonce
+    $nonce = isset($_POST['nonce']) ? sanitize_text_field($_POST['nonce']) : '';
+    if ( ! wp_verify_nonce( $nonce, 'thub_fav_toggle' ) ) {
+      wp_send_json_error( ['message'=>'Bad nonce'], 403 );
+    }
+
+    // Utente
+    $user_id = get_current_user_id();
+    $redir   = isset($_POST['redirect_to']) ? esc_url_raw($_POST['redirect_to']) : home_url(add_query_arg([]));
+    if ( ! $user_id ) {
+      wp_send_json_error( ['code'=>'not_logged','login_url'=> wp_login_url($redir) ], 401 );
+    }
+
+    // Post
+    $post_id = isset($_POST['post_id']) ? (int) $_POST['post_id'] : 0;
+    if ( ! $post_id || get_post_type($post_id) !== 'ricetta' ) {
+      wp_send_json_error( ['message'=>'Invalid post'], 400 );
+    }
+
+    // Toggle
+    $arr = thub_get_saved_recipes_for_user( $user_id );
+    $is_saved = in_array( $post_id, $arr, true );
+
+    if ( $is_saved ) {
+      $arr = array_values( array_diff( $arr, [$post_id] ) );
+      update_user_meta( $user_id, THUB_FAV_META, $arr );
+      wp_send_json_success( ['status'=>'removed','count'=>count($arr)] );
+    } else {
+      $arr[] = $post_id;
+      $arr = array_values( array_unique( array_map('intval',$arr) ) );
+      update_user_meta( $user_id, THUB_FAV_META, $arr );
+      wp_send_json_success( ['status'=>'added','count'=>count($arr)] );
+    }
+  }
+}
 
 /* ============================================================
  * [THUB_ADMIN_PENDING] — Pannello moderazione ricette
@@ -3690,21 +3797,52 @@ add_action('admin_post_thub_recipe_deny', function(){
 });
 
 
-/*Non rimuove dal menu attualmente da verificare*/
+
+
+
 /* ============================================================
- * [THUB_MENU_FILTER] Rimuove “Nuova ricetta” dal menu Servizi
- * - Funziona per theme_location 'thub-canvas-servizi' (adatta se usi un altro location)
+ * [THUB_FAV_TOGGLE_AJAX] Rimuovi dai preferiti (Canvas → Raccolte)
+ * - Action: thub_remove_favorite
+ * - Sicurezza: nonce 'thub_fav' + utente loggato
+ * - Storage: user_meta 'thub_saved_recipes' (array di ID)
  * ============================================================ */
-add_filter('wp_nav_menu_objects', function($items, $args){
-  // Modifica SOLO il menu Servizi (adatta 'thub-canvas-servizi' o usa $args->menu->slug === 'servizi')
-  if ( isset($args->theme_location) && $args->theme_location === 'thub-canvas-servizi' ) {
-    $target = trailingslashit( home_url('/servizi/nuova-ricetta') );
-    $items  = array_filter($items, function($it) use ($target){
-      $url = isset($it->url) ? trailingslashit($it->url) : '';
-      return ( $url !== $target );
-    });
+
+add_action('wp_ajax_thub_remove_favorite', 'thub_ajax_remove_favorite');
+function thub_ajax_remove_favorite(){
+  if ( ! check_ajax_referer('thub_fav', '_ajax_nonce', false) ) {
+    wp_send_json_error(['message' => 'Nonce non valido'], 403);
   }
-  return $items;
+  $user_id = get_current_user_id();
+  if ( ! $user_id ) {
+    wp_send_json_error(['message' => 'Utente non autenticato'], 401);
+  }
+  $post_id = isset($_POST['post_id']) ? (int) $_POST['post_id'] : 0;
+  if ( $post_id <= 0 ) {
+    wp_send_json_error(['message' => 'ID ricetta non valido'], 400);
+  }
+
+  $fav = get_user_meta($user_id, 'thub_saved_recipes', true);
+  if ( ! is_array($fav) ) $fav = [];
+  $fav = array_map('intval', $fav);
+
+  // Rimuovi l'ID (se presente)
+  $fav = array_values( array_diff($fav, [$post_id]) );
+  update_user_meta($user_id, 'thub_saved_recipes', $fav);
+
+  wp_send_json_success([
+    'removed' => $post_id,
+    'count'   => count($fav),
+  ]);
+}
+
+
+
+
+
+
+// [THUB_PURCHASED_FILTER] Collega gli ID ricette acquistate
+add_filter('thub_get_user_purchased_recipe_ids', function($ids, $user_id){
+  // TODO: restituisci qui un array di ID post 'ricetta' acquistati dall'utente
+  // es: leggi meta ordini WooCommerce → post IDs
+  return is_array($ids) ? $ids : [];
 }, 10, 2);
-
-

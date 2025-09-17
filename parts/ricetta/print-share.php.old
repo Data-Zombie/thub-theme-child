@@ -1,0 +1,105 @@
+<?php
+/* ============================================================
+ * [THUB_PRINT_SHARE] Pulsanti Stampa / Condividi / Preferiti
+ * - Stampa & Condividi: visibili sempre; se utente NON Pro → classe 'is-locked'
+ *   (il JS intercetta 'is-locked' e mostra un tooltip/messaggio)
+ * - Preferiti (★/cuore): SEMPRE visibile ai loggati e ai non loggati
+ *   (se non loggato → redirect a /login?redirect_to=...)
+ * - Dipendenze:
+ *     CSS: thub-recipe.css  (blocchi [THUB_TTS_BTN_INLINE], [THUB_FAV_TOGGLE_CSS], ecc.)
+ *     JS : thub-recipe.js   (blocchi porzioni/kcal, gating, [THUB_FAV_TOGGLE_JS])
+ *     PHP: functions.php    ([THUB_FAV_HELPERS], [THUB_FAV_TOGGLE_AJAX])
+ * - Posizionamento: incluso nella singola ricetta vicino al titolo/meta
+ *   via get_template_part('parts/ricetta/print-share');
+ * ============================================================ */
+
+if (!defined('ABSPATH')) exit;
+
+/* --------------------------------------------
+ * [THUB_GATING_STATE] Stato Pro utente corrente
+ * -------------------------------------------- */
+$is_pro = false;
+// Preferenza 1: helper canonico se presente
+if (function_exists('thub_current_user_is_pro')) {
+  $is_pro = (bool) thub_current_user_is_pro();
+// Preferenza 2: helper alternativo con user_id
+} elseif (function_exists('thub_user_is_pro')) {
+  $is_pro = (bool) thub_user_is_pro( get_current_user_id() );
+// Fallback: consenti a plugin/tema di fornire lo stato via filtro
+} else {
+  $is_pro = (bool) apply_filters('thub_is_pro_user', false);
+}
+
+/* --------------------------------------------
+ * [THUB_FAV_VARS] Variabili pulsante Preferiti
+ * -------------------------------------------- */
+$post_id   = get_the_ID();
+$user_id   = get_current_user_id();
+$ajaxurl   = admin_url('admin-ajax.php');
+$fav_nonce = wp_create_nonce('thub_fav_toggle');
+$login_url = wp_login_url( get_permalink($post_id) );
+
+// stato "salvata" lettura sicura (con helper se presente)
+if (function_exists('thub_is_recipe_saved_by_user')) {
+  $is_saved = $user_id ? thub_is_recipe_saved_by_user($user_id, $post_id) : false;
+} else {
+  // Fallback: leggi direttamente la user_meta 'thub_saved_recipes'
+  $fav_arr  = (array) get_user_meta($user_id, 'thub_saved_recipes', true);
+  $is_saved = $user_id ? in_array((int)$post_id, array_map('intval', $fav_arr), true) : false;
+}
+
+// Messaggio di lock per non-Pro
+$gating_msg = __('Disponibile con Pro', 'thub');
+?>
+
+<div class="thub-actions" id="thub-print-share" role="group" aria-label="<?php esc_attr_e('Azioni ricetta', 'thub'); ?>">
+  <!-- ==========================================
+       [THUB_PRINT_BTN] STAMPA
+       - Se NON Pro → 'is-locked' (JS mostra tooltip)
+       ========================================== -->
+  <button
+    type="button"
+    class="thub-btn thub-btn--print <?php echo $is_pro ? '' : 'is-locked'; ?> <!-- [THUB_LOCK_FIX] -->"
+    data-action="print"
+    data-lock-msg="<?php echo esc_attr($gating_msg); ?>"
+    aria-label="<?php esc_attr_e('Stampa la ricetta', 'thub'); ?>">
+    <?php esc_html_e('Stampa111', 'thub'); ?>
+  </button>
+
+  <!-- ==========================================
+       [THUB_SHARE_BTN] CONDIVIDI
+       - Se NON Pro → 'is-locked' (JS mostra tooltip)
+       ========================================== -->
+  <button
+    type="button"
+    class="thub-btn thub-btn--share <?php echo $is_pro ? '' : 'is-locked'; ?> <!-- [THUB_LOCK_FIX] -->"
+    data-action="share"
+    data-lock-msg="<?php echo esc_attr($gating_msg); ?>"
+    aria-label="<?php esc_attr_e('Condividi la ricetta', 'thub'); ?>">
+    <?php esc_html_e('Condividi', 'thub'); ?>
+  </button>
+
+  <!-- ==========================================
+       [THUB_FAV_TOGGLE_BTN] PREFERITI (★/cuore)
+       - Sempre visibile (anche ai non loggati → JS farà redirect a /login)
+       - Toggle AJAX: action=thub_toggle_favorite
+       ========================================== -->
+  <button
+    type="button"
+    class="thub-btn thub-btn--fav <?php echo $is_saved ? 'is-on' : ''; ?>"
+    data-action="fav-toggle"
+    data-ajax="<?php echo esc_url($ajaxurl); ?>"
+    data-nonce="<?php echo esc_attr($fav_nonce); ?>"
+    data-post="<?php echo (int) $post_id; ?>"
+    data-login-url="<?php echo esc_url($login_url); ?>"
+    aria-pressed="<?php echo $is_saved ? 'true' : 'false'; ?>"
+    aria-label="<?php echo $is_saved ? esc_attr__('Rimuovi dai preferiti', 'thub') : esc_attr__('Salva nei preferiti', 'thub'); ?>"
+    title="<?php echo $is_saved ? esc_attr__('Rimuovi dai preferiti', 'thub') : esc_attr__('Salva nei preferiti', 'thub'); ?>"
+  >
+    <!-- [THUB_FAV_ICN] Icona cuore 18px -->
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+      <path d="M12 21s-6.7-3.9-8.4-7.3C1.9 10.4 3.7 8 6.1 8c1.7 0 3 1.2 3.9 2.4C10.9 9.2 12.2 8 13.9 8c2.4 0 4.2 2.4 2.5 5.7C18.7 17.1 12 21 12 21z" fill="currentColor"/>
+    </svg>
+    <span class="thub-fav-label"><?php echo $is_saved ? esc_html__('Salvata', 'thub') : esc_html__('Salva', 'thub'); ?></span>
+  </button>
+</div>

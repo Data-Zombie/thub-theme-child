@@ -126,8 +126,14 @@ if ( isset($_GET['post_id'], $_GET['mode']) && $_GET['mode'] === 'edit' ) {
         <input type="url" name="video_url" class="thub-input" placeholder="https://...">
       </div>
       <div class="thub-subbox">
-        <div class="thub-label">Immagine della ricetta</div>
-        <input type="file" name="thub_recipe_image" class="thub-input thub-input--file" accept="image/*" required>
+        <div class="thub-nr__image-upload">
+          <div id="thub-nr-image-preview" class="thub-nr__image-preview is-empty" data-has-image="0">
+            <span class="thub-nr__image-placeholder">Nessuna immagine selezionata</span>
+            <img src="" alt="" loading="lazy" decoding="async">
+          </div>
+          <input type="file" name="thub_recipe_image" class="thub-input thub-input--file" accept="image/*" required>
+          <input type="hidden" name="thub_existing_image_id" id="thub_existing_image_id" value="">
+        </div>
       </div>
     </div>
 
@@ -331,6 +337,35 @@ if ( isset($_GET['post_id'], $_GET['mode']) && $_GET['mode'] === 'edit' ) {
       background:#fff;
     }
     .thub-input--file{ border:0 !important; padding-left:0 !important; }
+    .thub-nr__image-upload{ display:flex; flex-direction:column; gap:12px; }
+    .thub-nr__image-preview{
+      position:relative;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      min-height:160px;
+      padding:12px;
+      border:1px dashed var(--border, #dcdce3);
+      border-radius:.9rem;
+      background:#f9f9fc;
+      overflow:hidden;
+    }
+    .thub-nr__image-preview img{
+      max-width:100%;
+      max-height:240px;
+      object-fit:contain;
+      display:none;
+      border-radius:.6rem;
+    }
+    .thub-nr__image-preview .thub-nr__image-placeholder{
+      color:#666;
+      text-align:center;
+      font-size:.95rem;
+      display:none;
+    }
+    .thub-nr__image-preview.is-empty .thub-nr__image-placeholder{ display:block; }
+    .thub-nr__image-preview.is-empty img{ display:none; }
+    .thub-nr__image-preview:not(.is-empty) img{ display:block; }
     .thub-input--ro{ border:0 !important; background:#f7f7f9 !important; color:#777; }
     .thub-input--static{ pointer-events:none; user-select:none; caret-color:transparent; }
     .thub-input--area{ border:0 !important; background:#fff !important; } /* richiesto */
@@ -549,6 +584,115 @@ if ( isset($_GET['post_id'], $_GET['mode']) && $_GET['mode'] === 'edit' ) {
     const stWrap    = document.getElementById('thub-steps-repeater');
     const stTplEl   = document.getElementById('tpl-step-row');
     const stTpl     = stTplEl ? stTplEl.innerHTML : '';
+    const imageInput         = $('input[name="thub_recipe_image"]');
+    const existingImageField = document.getElementById('thub_existing_image_id');
+    const imagePreviewWrap   = document.getElementById('thub-nr-image-preview');
+    const imagePreviewImg    = imagePreviewWrap ? imagePreviewWrap.querySelector('img') : null;
+    const imagePlaceholder   = imagePreviewWrap ? imagePreviewWrap.querySelector('.thub-nr__image-placeholder') : null;
+    let previewObjectUrl     = '';
+
+    const markImagePreview = function(has){
+      if (!imagePreviewWrap) { return; }
+      imagePreviewWrap.dataset.hasImage = has ? '1' : '0';
+      imagePreviewWrap.classList.toggle('is-empty', !has);
+      if (imagePlaceholder) { imagePlaceholder.setAttribute('aria-hidden', has ? 'true' : 'false'); }
+    };
+
+    const resetPreviewDimensions = function(){
+      if (!imagePreviewImg) { return; }
+      imagePreviewImg.style.width = '';
+      imagePreviewImg.style.height = '';
+      imagePreviewImg.removeAttribute('width');
+      imagePreviewImg.removeAttribute('height');
+    };
+
+    const applyPreviewDimensions = function(width, height){
+      if (!imagePreviewImg) { return; }
+      const w = parseInt(width || 0, 10);
+      const h = parseInt(height || 0, 10);
+      if (!w || !h) {
+        resetPreviewDimensions();
+        return;
+      }
+      const maxW = 360;
+      const maxH = 240;
+      const ratio = Math.min(maxW / w, maxH / h, 1);
+      const finalW = Math.max(1, Math.round(w * ratio));
+      const finalH = Math.max(1, Math.round(h * ratio));
+      imagePreviewImg.style.width = finalW + 'px';
+      imagePreviewImg.style.height = finalH + 'px';
+      imagePreviewImg.setAttribute('width', String(finalW));
+      imagePreviewImg.setAttribute('height', String(finalH));
+    };
+
+    const clearImagePreview = function(){
+      if (!imagePreviewWrap || !imagePreviewImg) { return; }
+      resetPreviewDimensions();
+      imagePreviewImg.removeAttribute('src');
+      imagePreviewImg.alt = '';
+      markImagePreview(false);
+    };
+
+    const showImagePreview = function(opts){
+      if (!imagePreviewWrap || !imagePreviewImg) { return; }
+      const src = (opts && opts.src) ? opts.src : '';
+      if (!src) {
+        clearImagePreview();
+        return;
+      }
+      const altText = (opts && opts.alt) ? opts.alt : '';
+      imagePreviewImg.src = src;
+      imagePreviewImg.alt = altText !== '' ? altText : 'Anteprima immagine ricetta';
+      resetPreviewDimensions();
+      const w = opts && opts.width ? opts.width : 0;
+      const h = opts && opts.height ? opts.height : 0;
+      if (w && h) {
+        applyPreviewDimensions(w, h);
+      } else {
+        const handle = function(){
+          applyPreviewDimensions(imagePreviewImg.naturalWidth, imagePreviewImg.naturalHeight);
+          imagePreviewImg.removeEventListener('load', handle);
+        };
+        imagePreviewImg.addEventListener('load', handle);
+      }
+      markImagePreview(true);
+    };
+
+    const revokePreviewObjectUrl = function(){
+      if (previewObjectUrl) {
+        URL.revokeObjectURL(previewObjectUrl);
+        previewObjectUrl = '';
+      }
+    };
+
+    if (imagePreviewWrap) {
+      const initialHasImage = imagePreviewWrap.dataset && imagePreviewWrap.dataset.hasImage === '1';
+      markImagePreview(initialHasImage);
+    }
+
+    if (imageInput) {
+      imageInput.addEventListener('change', function(){
+        revokePreviewObjectUrl();
+        const file = imageInput.files && imageInput.files[0];
+        if (!file) {
+          if (existingImageField && existingImageField.value) {
+            markImagePreview(true);
+          } else {
+            clearImagePreview();
+          }
+          return;
+        }
+        previewObjectUrl = URL.createObjectURL(file);
+        showImagePreview({
+          src: previewObjectUrl,
+          alt: file.name || '',
+          width: file.width || 0,
+          height: file.height || 0
+        });
+        if (existingImageField) { existingImageField.value = ''; }
+        imageInput.classList.remove('is-error');
+      });
+    }
 
     /* ============================================================
       [THUB_NR_EDIT_LOAD_JS] — Carica i dati in edit e precompila
@@ -587,6 +731,22 @@ if ( isset($_GET['post_id'], $_GET['mode']) && $_GET['mode'] === 'edit' ) {
             if (vu) { vu.value = d.video_url || ''; }
             const no = document.querySelector('textarea[name="eventuali_note_tecniche"]');
             if (no) { no.value = d.eventuali_note_tecniche || ''; }
+            if (existingImageField) {
+              const fid = (d.featured_image && d.featured_image.id) ? d.featured_image.id : '';
+              existingImageField.value = fid ? String(fid) : '';
+            }
+            if (d.featured_image && d.featured_image.url) {
+              revokePreviewObjectUrl();
+              showImagePreview({
+                src: d.featured_image.url,
+                alt: d.featured_image.alt || d.post_title || '',
+                width: d.featured_image.width || 0,
+                height: d.featured_image.height || 0
+              });
+              if (imageInput) { imageInput.classList.remove('is-error'); }
+            } else {
+              clearImagePreview();
+            }
 
             const rNonna = document.querySelector('input[name="ricetta_dest"][value="nonna"]');
             if (rNonna) { rNonna.checked = true; }
@@ -810,15 +970,18 @@ if ( isset($_GET['post_id'], $_GET['mode']) && $_GET['mode'] === 'edit' ) {
       req('input[name="tempo_di_preparazione"]', 'Tempo di preparazione');
       req('input[name="tempo_di_cottura"]', 'Tempo di cottura');
 
-      const fi = $('input[name="thub_recipe_image"]');
-      if (fi) {
-        const hasFile = fi.files && fi.files.length > 0;
-        if (!hasFile) {
+      if (imageInput) {
+        const hasFile = imageInput.files && imageInput.files.length > 0;
+        const hasExistingImage = (!hasFile) && (
+          (existingImageField && existingImageField.value && existingImageField.value !== '') ||
+          (imagePreviewWrap && imagePreviewWrap.dataset && imagePreviewWrap.dataset.hasImage === '1')
+        );
+        if (!hasFile && !hasExistingImage) {
           ok = false;
           errs.push('Immagine della ricetta mancante');
-          fi.classList.add('is-error');
+          imageInput.classList.add('is-error');
         } else {
-          fi.classList.remove('is-error');
+          imageInput.classList.remove('is-error');
         }
       }
 

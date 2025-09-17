@@ -48,13 +48,83 @@ get_header();
 
         <!-- [THUB_ACTIONS] Pulsanti con gating -->
         <div class="ricetta-actions">
+          <?php
+            /* --------------------------------------------
+            * [THUB_ACTIONS_VARS]
+            * - $is_pro: stato abbonamento
+            * - $is_saved: stato preferito corrente
+            * - $ajaxurl / $fav_nonce / $login_url: per toggle AJAX preferiti
+            * -------------------------------------------- */
+            $is_pro = false;
+            if (function_exists('thub_current_user_is_pro')) {
+              $is_pro = (bool) thub_current_user_is_pro();
+            } elseif (function_exists('thub_is_pro_user')) {
+              $is_pro = (bool) thub_is_pro_user();
+            } else {
+              $is_pro = (bool) apply_filters('thub_is_pro_user', false);
+            }
+
+            $post_id   = get_the_ID();
+            $user_id   = get_current_user_id();
+            $ajaxurl   = admin_url('admin-ajax.php');
+            $fav_nonce = wp_create_nonce('thub_fav_toggle');
+            $login_url = wp_login_url( get_permalink($post_id) );
+
+            if (function_exists('thub_is_recipe_saved_by_user')) {
+              $is_saved = $user_id ? thub_is_recipe_saved_by_user($user_id, $post_id) : false;
+            } else {
+              $arr = (array) get_user_meta($user_id, 'thub_saved_recipes', true);
+              $is_saved = $user_id ? in_array((int)$post_id, array_map('intval',$arr), true) : false;
+            }
+
+            $gating_msg = __('Disponibile con Pro', 'thub');
+          ?>
+
           <?php if ($is_pro): ?>
-            <button class="btn-print" onclick="window.print()" aria-label="Stampa la ricetta">🖨️ Stampa</button>
-            <button class="btn-share" onclick="thubShare()" aria-label="Condividi la ricetta">🔗 Condividi</button>
+            <!-- [THUB_PRINT_BTN] Stampa libera -->
+            <button class="btn-print"
+                    onclick="window.print()"
+                    aria-label="<?php esc_attr_e('Stampa la ricetta','thub'); ?>">🖨️ <?php esc_html_e('Stampa','thub'); ?></button>
+
+            <!-- [THUB_SHARE_BTN] Condividi libero -->
+            <button class="btn-share"
+                    onclick="thubShare()"
+                    aria-label="<?php esc_attr_e('Condividi la ricetta','thub'); ?>">🔗 <?php esc_html_e('Condividi','thub'); ?></button>
           <?php else: ?>
-            <button class="btn-print is-locked" data-lock-msg="Disponibile con Pro" aria-label="Stampa disponibile con Pro">🖨️ Stampa</button>
-            <button class="btn-share is-locked" data-lock-msg="Disponibile con Pro" aria-label="Condividi disponibile con Pro">🔗 Condividi</button>
+            <!-- [THUB_PRINT_BTN_LOCKED] Stampa bloccata (tooltip JS su click) -->
+            <button class="btn-print is-locked"
+                    data-lock-msg="<?php echo esc_attr($gating_msg); ?>"
+                    aria-label="<?php esc_attr_e('Stampa disponibile con Pro','thub'); ?>">🖨️ <?php esc_html_e('Stampa','thub'); ?></button>
+
+            <!-- [THUB_SHARE_BTN_LOCKED] Condividi bloccata (tooltip JS su click) -->
+            <button class="btn-share is-locked"
+                    data-lock-msg="<?php echo esc_attr($gating_msg); ?>"
+                    aria-label="<?php esc_attr_e('Condividi disponibile con Pro','thub'); ?>">🔗 <?php esc_html_e('Condividi','thub'); ?></button>
           <?php endif; ?>
+
+          <!-- ==========================================
+              [THUB_FAV_TOGGLE_BTN] PREFERITI (★/cuore)
+              - Sempre visibile (se non loggato → redirect a /login?redirect_to=…)
+              - Catturato da [THUB_FAV_TOGGLE_JS] in thub-recipe.js
+              ========================================== -->
+          <button
+            type="button"
+            class="btn-fav thub-btn thub-btn--fav <?php echo $is_saved ? 'is-on' : ''; ?>"
+            data-action="fav-toggle"
+            data-ajax="<?php echo esc_url($ajaxurl); ?>"
+            data-nonce="<?php echo esc_attr($fav_nonce); ?>"
+            data-post="<?php echo (int) $post_id; ?>"
+            data-login-url="<?php echo esc_url($login_url); ?>"
+            aria-pressed="<?php echo $is_saved ? 'true' : 'false'; ?>"
+            aria-label="<?php echo $is_saved ? esc_attr__('Rimuovi dai preferiti','thub') : esc_attr__('Salva nei preferiti','thub'); ?>"
+            title="<?php echo $is_saved ? esc_attr__('Rimuovi dai preferiti','thub') : esc_attr__('Salva nei preferiti','thub'); ?>"
+          >
+            <!-- Icona cuore 18px -->
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+              <path d="M12 21s-6.7-3.9-8.4-7.3C1.9 10.4 3.7 8 6.1 8c1.7 0 3 1.2 3.9 2.4C10.9 9.2 12.2 8 13.9 8c2.4 0 4.2 2.4 2.5 5.7C18.7 17.1 12 21 12 21z" fill="currentColor"/>
+            </svg>
+            <span class="thub-fav-label"><?php echo $is_saved ? esc_html__('Salvata','thub') : esc_html__('Salva','thub'); ?></span>
+          </button>
         </div>
 
         <?php
